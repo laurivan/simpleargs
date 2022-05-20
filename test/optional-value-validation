@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" \
+             --level arg @optionalvalue @@int \
+
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_optional_value_flag_off() {
+    #
+    value 0 source_result parse_result process_result
+    empty level
+}
+
+# The validation should succeed for level: the value for
+# the option is not given so validation (@@int) should not
+# be executed.
+test_optional_value_flag_on_without_value() {
+    # --level
+    value 0 source_result parse_result process_result
+    empty level
+}
+
+test_optional_value_flag_on_with_invalid_value() {
+    # --level=fdh
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_optional_value_flag_on_with_valid_value() {
+    # --level=12
+    value 0 source_result parse_result process_result
+    value 12 level
+}

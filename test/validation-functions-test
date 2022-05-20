@@ -1,0 +1,461 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0"
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_sa_validate_int() {
+    #
+    # Valid integers
+    sa_validate_int 0 || false
+    sa_validate_int -0 || false
+    sa_validate_int +0 || false
+    sa_validate_int 1 || false
+    sa_validate_int -1 || false
+    sa_validate_int +1 || false
+    sa_validate_int 123 || false
+    sa_validate_int -321 || false
+
+    # Invalid integers
+    sa_validate_int "" && false
+    sa_validate_int " " && false
+    sa_validate_int a && false
+    sa_validate_int a12 && false
+    sa_validate_int 12a && false
+    sa_validate_int 1.1 && false
+    sa_validate_int -0. && false
+
+    # Ranges
+    sa_validate_int .. 0 || false
+
+    sa_validate_int -10..-5 -11 && false
+    sa_validate_int -10..-5 -10 || false
+    sa_validate_int -10..-5 -10 || false
+    sa_validate_int -10..-5 -9 || false
+    sa_validate_int -10..-5 -6 || false
+    sa_validate_int -10..-5 -5 || false
+    sa_validate_int -10..-5 -4 && false
+
+    sa_validate_int 12.. 11 && false
+    sa_validate_int 12.. 12 || false
+    sa_validate_int 12.. 13 || false
+
+    sa_validate_int 12..14 11 && false
+    sa_validate_int 12..14 12 || false
+    sa_validate_int 12..14 13 || false
+    sa_validate_int 12..14 14 || false
+    sa_validate_int 12..14 15 && false
+    sa_validate_int 12..14 -13 && false
+
+    sa_validate_int ..14 15 && false
+    sa_validate_int ..14 14 || false
+    sa_validate_int ..14 13 || false
+    sa_validate_int ..14 -20 || false
+
+    sa_validate_int .. 14 || false
+    sa_validate_int .. asdf && false
+
+    # Error case
+    sa_validate_int || result=$?; [ "${result}" -eq "${SA_INCORRECT_USE}" ]
+}
+
+test_sa_validate_int_as_float() {
+    #
+    # Valid floats
+    sa_validate_float 0 || false
+    sa_validate_float -0 || false
+    sa_validate_float +0 || false
+    sa_validate_float 1 || false
+    sa_validate_float -1 || false
+    sa_validate_float +1 || false
+    sa_validate_float 123 || false
+    sa_validate_float -321 || false
+
+    # Invalid floats
+    sa_validate_float "" && false
+    sa_validate_float " " && false
+    sa_validate_float a && false
+    sa_validate_float a12 && false
+    sa_validate_float 12a && false
+    sa_validate_float 1..1 && false
+    sa_validate_float -0. && false
+
+    # Ranges
+    sa_validate_float .. 0 || false
+
+    sa_validate_float -10..-5 -11 && false
+    sa_validate_float -10..-5 -10 || false
+    sa_validate_float -10..-5 -10 || false
+    sa_validate_float -10..-5 -9 || false
+    sa_validate_float -10..-5 -6 || false
+    sa_validate_float -10..-5 -5 || false
+    sa_validate_float -10..-5 -4 && false
+
+    sa_validate_float 12.. 11 && false
+    sa_validate_float 12.. 12 || false
+    sa_validate_float 12.. 13 || false
+
+    sa_validate_float 12..14 11 && false
+    sa_validate_float 12..14 12 || false
+    sa_validate_float 12..14 13 || false
+    sa_validate_float 12..14 14 || false
+    sa_validate_float 12..14 15 && false
+    sa_validate_float 12..14 -13 && false
+
+    sa_validate_float ..14 15 && false
+    sa_validate_float ..14 14 || false
+    sa_validate_float ..14 13 || false
+    sa_validate_float ..14 -20 || false
+    sa_validate_float || result=$?; [ "${result}" -eq "${SA_INCORRECT_USE}" ]
+}
+
+test_sa_validate_float() {
+    #
+    sa_validate_float 1.0 || false
+    sa_validate_float -12.3 || false
+    sa_validate_float +0.101 || false
+    sa_validate_float 12e1 || false
+    sa_validate_float 12E3 || false
+    sa_validate_float 12E+3 || false
+    sa_validate_float 5.4e-3 || false
+    sa_validate_float 13213.0e-12 || false
+
+    # Ranges
+    sa_validate_float -12.3e1..+13E2 -123 || false
+    sa_validate_float -12.3e1..+13E2 -122.9 || false
+    sa_validate_float -12.3e1..+13E2 1280 || false
+    sa_validate_float -12.3e1..+13E2 13e1 || false
+    sa_validate_float -12.3e1..+13E2 0.2E2 || false
+    sa_validate_float -12.3e1..+13E2 0.2E+2 || false
+    sa_validate_float -12.3e-1..+13E2 0.2E+2 || false
+
+    # Accuracy
+    sa_validate_float 0.1..2.3 0.1 || false
+    sa_validate_float 0.1..2.3 0.09 && false
+    sa_validate_float 0.1..2.3 0.099 && false
+    sa_validate_float 0.1..2.3 0.0999 && false
+
+    sa_validate_float e && false
+    sa_validate_float . && false
+    sa_validate_float 12..3 && false
+    sa_validate_float 12..3 14 && false
+    sa_validate_float 12.3..30.2 a && false
+
+    # Error case
+    sa_validate_float || result=$?; [ "${result}" -eq "${SA_INCORRECT_USE}" ]
+}
+
+test_sa_validate_float_misuse() {
+    #
+    sa_validate_float 2 4 && false
+}
+
+test_sa_validate_int_error_messages() {
+    #
+    sa_gen_normal_error_msg=true sa_validate_int asdf || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "Invalid integer value: 'asdf'" sa_error_msg
+    sa_gen_normal_error_msg=true sa_validate_int 1..3 5 || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "Value '5' not in range: 1..3" sa_error_msg
+    sa_gen_normal_error_msg=true sa_validate_int ..3 5 || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "Value '5' greater than 3" sa_error_msg
+    sa_gen_normal_error_msg=true sa_validate_int 1.. 0 || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "Value '0' less than 1" sa_error_msg
+
+    sa_gen_negated_error_msg=true sa_validate_int 4 || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "Value '4' should not be a valid integer" sa_error_msg
+    sa_gen_negated_error_msg=true sa_validate_int 5..19 18 || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "Value '18' should not be an integer in range 5..19" sa_error_msg
+    sa_gen_negated_error_msg=true sa_validate_int 2.. 4 || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "Value '4' should not be greater than or equal to 2" sa_error_msg
+    sa_gen_negated_error_msg=true sa_validate_int ..28 -21 || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "Value '-21' should not be less than or equal to 28" sa_error_msg
+}
+
+test_sa_validate_float_error_messages() {
+    #
+    sa_gen_normal_error_msg=true sa_validate_float asdf || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "Invalid float value: 'asdf'" sa_error_msg
+    sa_gen_normal_error_msg=true sa_validate_float 1.1..14e1 140.1 || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "Value '140.1' not in range: 1.1..14e1" sa_error_msg
+    sa_gen_normal_error_msg=true sa_validate_float ..14e1 140.1 || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "Value '140.1' greater than 14e1" sa_error_msg
+    sa_gen_normal_error_msg=true sa_validate_float 1.1.. 1.09 || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "Value '1.09' less than 1.1" sa_error_msg
+
+    # Malformed min and max values
+    sa_validate_float 1a2.. 12 || status=$?
+    value 2 status
+    sa_validate_float 1.0..18EE1 12 || status=$?
+    value 2 status
+
+    sa_gen_negated_error_msg=true sa_validate_float 4.0 || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "Value '4.0' should not be a valid float" sa_error_msg
+    sa_gen_negated_error_msg=true sa_validate_float 1..5 4.0 || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "Value '4.0' should not be a float in range 1..5" sa_error_msg
+    sa_gen_negated_error_msg=true sa_validate_float ..5 4.0 || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "Value '4.0' should not be less than or equal to 5" sa_error_msg
+    sa_gen_negated_error_msg=true sa_validate_float 1.. 4.0 || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "Value '4.0' should not be greater than or equal to 1" sa_error_msg
+}
+
+test_sa_validate_file_exists() {
+    #
+    cd /tmp/sa-validation
+    sa_validate_exists dir || false
+    sa_validate_exists file || false
+    sa_validate_exists nonempty-file || false
+    sa_validate_exists non-existing-file && false
+
+    sa_gen_normal_error_msg=true sa_validate_exists "filename" || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "No such file: 'filename'" sa_error_msg
+
+    sa_gen_negated_error_msg=true sa_validate_exists "filename" || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "File exists: 'filename'" sa_error_msg
+
+    sa_validate_exists || result=$?; [ "${result}" -eq "${SA_INCORRECT_USE}" ]
+}
+
+test_sa_validate_file() {
+    #
+    cd /tmp/sa-validation
+    sa_validate_file dir && false
+    sa_validate_file file || false
+    sa_validate_file nonempty-file || false
+    sa_validate_file non-existing-file && false
+
+    sa_gen_normal_error_msg=true sa_validate_file "filename" || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "No such (ordinary) file: 'filename'" sa_error_msg
+
+    sa_gen_negated_error_msg=true sa_validate_file "filename" || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "(Ordinary) file exists: 'filename'" sa_error_msg
+
+    sa_validate_file || result=$?; [ "${result}" -eq "${SA_INCORRECT_USE}" ]
+}
+
+test_sa_validate_dir() {
+    #
+    cd /tmp/sa-validation
+    sa_validate_dir dir || false
+    sa_validate_dir file && false
+    sa_validate_dir non-existing-file && false
+
+    sa_gen_normal_error_msg=true sa_validate_dir "filename" || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "No such directory: 'filename'" sa_error_msg
+
+    sa_gen_negated_error_msg=true sa_validate_dir "filename" || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "Directory exists: 'filename'" sa_error_msg
+
+    sa_validate_dir || result=$?; [ "${result}" -eq "${SA_INCORRECT_USE}" ]
+}
+
+test_sa_validate_notempty() {
+    #
+    cd /tmp/sa-validation
+    sa_validate_notempty dir || false
+    sa_validate_notempty nonempty-file || false
+    sa_validate_notempty file && false
+    sa_validate_notempty non-existing-file && false
+
+    sa_gen_normal_error_msg=true sa_validate_notempty "filename" || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "No such file or not empty: 'filename'" sa_error_msg
+
+    sa_gen_negated_error_msg=true sa_validate_notempty "filename" || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "Non-empty file exists: 'filename'" sa_error_msg
+
+    sa_validate_notempty || result=$?; [ "${result}" -eq "${SA_INCORRECT_USE}" ]
+}
+
+test_sa_validate_readable() {
+    #
+    cd /tmp/sa-validation
+    sa_validate_readable dir
+    sa_validate_readable file
+    sa_validate_readable all-perm-file
+    sa_validate_readable writable && false
+
+    sa_gen_normal_error_msg=true sa_validate_readable "filename" || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "No such file or not readable: 'filename'" sa_error_msg
+
+    sa_gen_negated_error_msg=true sa_validate_readable "filename" || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "Readable file exists: 'filename'" sa_error_msg
+
+    sa_validate_readable || result=$?; [ "${result}" -eq "${SA_INCORRECT_USE}" ]
+}
+
+test_sa_validate_writable() {
+    #
+    cd /tmp/sa-validation
+    sa_validate_writable dir
+    sa_validate_writable file
+    sa_validate_writable all-perm-file
+    sa_validate_writable readable && false
+
+    sa_gen_normal_error_msg=true sa_validate_writable "filename" || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "No such file or not writable: 'filename'" sa_error_msg
+
+    sa_gen_negated_error_msg=true sa_validate_writable "filename" || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "Writable file exists: 'filename'" sa_error_msg
+
+    sa_validate_writable || result=$?; [ "${result}" -eq "${SA_INCORRECT_USE}" ]
+}
+
+test_sa_validate_executable() {
+    #
+    cd /tmp/sa-validation
+    sa_validate_executable dir
+    sa_validate_executable all-perm-file
+    sa_validate_executable readable && false
+    sa_validate_executable writable && false
+
+    sa_gen_normal_error_msg=true sa_validate_executable "filename" || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "No such file or not executable: 'filename'" sa_error_msg
+
+    sa_gen_negated_error_msg=true sa_validate_executable "filename" || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "Executable file exists: 'filename'" sa_error_msg
+
+    sa_validate_executable || result=$?; [ "${result}" -eq "${SA_INCORRECT_USE}" ]
+}
+
+test_sa_validate_modified() {
+    #
+    cd /tmp/sa-validation
+    echo "line" > newfile
+    sa_validate_modified newfile
+    sleep  1.1 # Wait longer than timestamp resolution
+    cat newfile >/dev/null
+    sa_validate_modified newfile && false
+
+    sa_gen_normal_error_msg=true sa_validate_executable "filename" || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "No such file or not executable: 'filename'" sa_error_msg
+
+    sa_gen_negated_error_msg=true sa_validate_executable "filename" || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "Executable file exists: 'filename'" sa_error_msg
+
+    sa_validate_modified || result=$?; [ "${result}" -eq "${SA_INCORRECT_USE}" ]
+}
+
+test_sa_validate_glob() {
+    #
+    sa_validate_glob "*.mp4" /tmp/videos/party.mp4
+    sa_validate_glob "*.mp4" ball.mp4
+    sa_validate_glob "?all.mp4" ball.mp4
+    sa_validate_glob "?all.mp4" call.mp4
+    sa_validate_glob "ca*" call.mp4
+    sa_validate_glob "*.mp4" data.txt && false
+
+    sa_gen_normal_error_msg=true sa_validate_glob "*.mp4" "data.txt" || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "'data.txt' does not match glob '*.mp4'" sa_error_msg
+
+    sa_gen_negated_error_msg=true sa_validate_glob "*.mp4" "party.mp4" || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "'party.mp4' matches glob '*.mp4'" sa_error_msg
+
+    sa_validate_glob one two three || result=$?; [ "${result}" -eq "${SA_INCORRECT_USE}" ]
+}
+
+test_sa_validate_filetype() {
+    #
+    cd /tmp/sa-validation
+    sa_validate_filetype "text" nonempty-file
+    sa_validate_filetype "MP4" nonempty-file && false
+    sa_validate_filetype "empty" file
+    sa_validate_filetype "ASCII" file && false
+    sa_validate_filetype "directory" dir
+    sa_validate_filetype "file" dir && false
+
+    sa_gen_normal_error_msg=true sa_validate_filetype "MP4" nonempty-file || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "'nonempty-file' is not of type 'MP4' (but 'ASCII text')" sa_error_msg
+
+    sa_gen_negated_error_msg=true sa_validate_filetype "text" nonempty-file || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "'nonempty-file' is of type 'text'" sa_error_msg
+
+    sa_validate_filetype || result=$?; [ "${result}" -eq "${SA_INCORRECT_USE}" ]
+}
+
+test_sa_validate_grep() {
+    #
+    sa_validate_grep "^a" "amanda" || false
+    sa_validate_grep "^a" "robert" && false
+
+    sa_gen_normal_error_msg=true sa_validate_grep "^a" "robert" || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "'robert' does not match regular expression '^a'" sa_error_msg
+
+    sa_gen_negated_error_msg=true sa_validate_grep "^a" "amanda" || status=$?
+    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+    value "'amanda' matches regular expression '^a'" sa_error_msg
+
+    sa_validate_grep || result=$?; [ "${result}" -eq "${SA_INCORRECT_USE}" ]
+    sa_validate_egrep || result=$?; [ "${result}" -eq "${SA_INCORRECT_USE}" ]
+}
+
+create_test_dirs_and_files() {
+    (
+        [ -d /tmp/sa-validation ] && rm -rf /tmp/sa-validation
+        mkdir /tmp/sa-validation
+        cd /tmp/sa-validation
+        touch file
+        echo "content" > nonempty-file
+        mkdir dir
+
+        touch all-perm-file; chmod 700 all-perm-file
+        touch no-perm-file; chmod 000 no-perm-file
+        touch readable; chmod 400 readable
+        touch writable; chmod 200 writable
+        touch executable; chmod 100 executable
+    )
+}
+
+remove_test_dirs_and_files() {
+    rm -rf /tmp/sa-validation
+}
+
+test_tear_down() {
+    #
+    remove_test_dirs_and_files
+}
+
+create_test_dirs_and_files

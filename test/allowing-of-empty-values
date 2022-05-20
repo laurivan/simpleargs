@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" \
+             --no-empty-allowed no_empty \
+             --allowed can_be_empty @allowempty \
+             --allowed-with-validation one,two,three @allowempty \
+             --allowed-with-regexp arg @@egrep "^1[0-9]{2}$" @allowempty \
+             -- \
+             "<no empty param>" \
+             "<may be empty param>" @allowempty
+
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_no_empty_param() {
+    # "" second
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_can_be_empty_param() {
+    # first ""
+    value 0 source_result parse_result process_result
+    value first no_empty_param
+    empty may_be_empty_param
+    [ $# -eq 0 ]
+}
+
+test_both_non_empty() {
+    # first second third
+    value 0 source_result parse_result process_result
+    value first no_empty_param
+    value second may_be_empty_param
+    [ $# -eq 1 ]
+    [ "$1" = third ]
+}
+
+test_no_empty_option_fail() {
+    # --no-empty-allowed "" first second
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_no_empty_option_success() {
+    # --no-empty-allowed "I'm not empty" first second
+    value 0 source_result parse_result process_result
+    value "I'm not empty" no_empty
+}
+
+test_can_be_empty_option_1() {
+    # --allowed "" first second
+    value 0 source_result parse_result process_result
+    empty can_be_empty
+}
+
+test_can_be_empty_option_2() {
+    # --allowed "not empty" first second
+    value 0 source_result parse_result process_result
+    value "not empty" can_be_empty
+}
+
+test_empty_with_validation_1() {
+    # --allowed-with-validation "" first second
+    value 0 source_result parse_result process_result
+    empty allowed_with_validation
+}
+
+test_empty_with_validation_2() {
+    # --allowed-with-validation "three" first second
+    value 0 source_result parse_result process_result
+    value "three" allowed_with_validation
+}
+
+test_empty_with_validation_3() {
+    # --allowed-with-validation "invalid value" first second
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_empty_with_regexp_1() {
+    # --allowed-with-regexp "" first second
+    value 0 source_result parse_result process_result
+    empty allowed_with_regexp
+}
+
+test_empty_with_regexp_2() {
+    # --allowed-with-regexp "123" first second
+    value 0 source_result parse_result process_result
+    value 123 allowed_with_regexp
+}
+
+test_multiple() {
+    # --no-empty-allowed my_value --allowed "" --allowed-with-validation three --allowed-with-regexp "" first ""
+    value 0 source_result parse_result process_result
+    value my_value no_empty
+    empty no_empty_allowed
+    empty can_be_empty
+    value three allowed_with_validation
+    empty allowed_with_regexp
+    value first no_empty_param
+    empty may_be_empty_param
+    [ $# -eq 0 ]
+}

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+
+# -------------------------------- simpleargs --------------------------------
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+sa_parse "$0" \
+         --float arg @@float @multivalue, \
+         --non-negative-float arg @@float 0.0.. @multivalue, \
+         --float-not-over-million arg @@float ..1E6 @multivalue, \
+         --positive arg @@float 0.. @@!float ..0 @multivalue,
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------

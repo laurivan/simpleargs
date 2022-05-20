@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" \
+             --level arg @validvalues=low,medium,high @@int 0..100 \
+             --name arg @@grep '^[A-Z][a-z]*$' \
+             -o/--operation arg @multivalue @validvalues=init,exec,abort @@egrep '^[a-z]+$' \
+
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_within_valid_values() {
+    # --level low
+    value 0 source_result parse_result process_result
+    value low level
+}
+
+test_within_validation_rules() {
+    # --level 12
+    value 0 source_result parse_result process_result
+    value 12 level
+}
+
+test_invalid() {
+    # --level 101
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_invalid2() {
+    # --level loww
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_multiple_invalid() {
+    # --level loww --name invalidlowercase
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+    # Use --silent to avoid "input file is also the output" error
+    grep --silent "'invalidlowercase' does not match regular expression" "${sa_test_stdout}"
+}
+
+test_multivalue_valid_by_value() {
+    # -o init
+    value 0 source_result parse_result process_result
+    arrayvalue operation init
+}
+
+test_multivalue_valid_by_validation_one() {
+    # -o print
+    value 0 source_result parse_result process_result
+    arrayvalue operation print
+}
+
+test_multivalue_valid_by_validation_two() {
+    # -o print -o save
+    value 0 source_result parse_result process_result
+    arrayvalue operation print save
+}

@@ -1,0 +1,367 @@
+#!/usr/bin/env bash
+# simpleargs-util
+
+sa_create_config_dir() {
+    local dir
+    for dir in "${sa_config_dir}" "${sa_cached_options_dir}" "${sa_manpage_dir}"
+    do
+        if [ ! -d "${dir}" ]
+        then
+            mkdir -p "${dir}" || { log ERROR "Cannot create directory: '${dir}'"; return 1; }
+            log CONFIG "Created directory: '${dir}'"
+        fi
+    done
+    if [ ! -d "${sa_completed_scripts_dir}" ]
+       then
+       log CONFIG "Creating an empty dir for the names of scripts to auto complete: '${sa_completed_scripts_dir}'"
+       mkdir -p "${sa_completed_scripts_dir}" || { log ERROR "Cannot create directory: '${sa_completed_scripts_dir}'"; return 1; }
+    fi
+}
+
+# Read option and parameter definitions from a cache file.
+#
+# Return codes
+# 0: Read cached options succesfully
+# 10: Cache directory does not exist
+# 11: Cached options (file) does not exist
+# 12: Cached options older than the script
+# 20: Cached options file exists but is not readable
+sa_read_from_cache() {
+    local script_name="$1"
+    local cached_options="${sa_cached_options_dir}/${sa_script_name}"
+    log CONFIG "Trying to read cached options: '${cached_options}'"
+    if [ -d "${sa_cached_options_dir}" ]
+    then
+        if [ -f "${cached_options}" ]
+        then
+            if [ -r "${cached_options}" ]
+            then
+                log FINEST "Comparing timestamps (script >< cache): '${sa_script_path}' >< '${cached_options}'"
+                if [ "${sa_script_path}" -nt "${cached_options}" ]
+                then
+                    log CONFIG "Not reading cached options: older than the script"
+                    return 12
+                else
+                    log CONFIG "Reading cached options: '${cached_options}'"
+                    . "${cached_options}"
+                    local return_value=$?
+                    log CONFIG "Read $(wc -c < "${cached_options}") bytes from cache file"
+                    return $return_value
+                fi
+            else
+                log ERROR "Cached options exist but is not readable: '${cached_options}'"
+                return 20
+            fi
+        else
+            log CONFIG "Cached options do not exist"
+            return 11
+        fi
+    else
+        log CONFIG "Directory for cached options does not exist: '${sa_cached_options_dir}'"
+        return 10
+    fi
+}
+
+# Write option and parameter definitions to a cache file.
+#
+# Return codes
+# 0: Successfully wrote the cache file
+sa_write_to_cache() {
+    sa_create_config_dir || return "${SA_PARSE_INTERNAL_ERROR}"
+
+    local script_name="$1"
+    # To avoid synchronization issues (when running many instantes of the same script simultaneously) write first
+    # to a temporary file (prefixed with the process ID) and in the end rename (mv) to the final cache file.
+    # mv is atomic in this case: https://stackoverflow.com/questions/18706419/is-a-move-operation-in-unix-atomic
+    local cached_options="${sa_cached_options_dir}/${sa_script_name}"
+    local temporary_cache_file="${sa_cached_options_dir}/$$-${sa_script_name}"
+    log CONFIG "Writing options to temporary cache file: '${temporary_cache_file}'"
+    {
+        local cachevar
+        for cachevar in sa_options sa_flags sa_optionmaps sa_fullnames sa_mapnames sa_params sa_parammaps sa_varnames
+        do
+            echo "# ${cachevar}"
+            declare -p "${cachevar}" || return "${SA_PARSE_INTERNAL_ERROR}"
+            echo
+        done
+
+        echo "# getopt strings"
+        declare -p sa_getopt_short_options sa_getopt_long_options || return "${SA_PARSE_INTERNAL_ERROR}"
+        echo "# \"completable\" flags for Bash completion"
+        declare -p sa_completable_flags || return "${SA_PARSE_INTERNAL_ERROR}"
+        echo
+
+        if [ ${#sa_optionmaps[@]} -gt 0 ]
+        then
+            echo "# option maps"
+            declare -p ${sa_optionmaps[@]} || return "${SA_PARSE_INTERNAL_ERROR}"
+            echo
+        fi
+
+        if [ ${#sa_parammaps[@]} -gt 0 ]
+        then
+            echo "# param maps"
+            declare -p ${sa_parammaps[@]} || return "${SA_PARSE_INTERNAL_ERROR}"
+            echo
+        fi
+
+        echo "# validation command modifiers"
+        declare -p sa_validation_command_modifiers || return "${SA_PARSE_INTERNAL_ERROR}"
+
+        local map_name
+        local validation_array_name
+        echo "# option validation arrays"
+        for map_name in ${sa_optionmaps[@]}
+        do
+            declare -n map=${map_name}
+            if [ -n "${map[validationarraynames]}" ]
+            then
+                echo "## ${map[fullname]}"
+                for validation_array_name in ${map[validationarraynames]}
+                do
+                    declare -p "${validation_array_name}" || return "${SA_PARSE_INTERNAL_ERROR}"
+                done
+            fi
+        done
+        echo
+
+        echo "# param validation arrays"
+        for map_name in ${sa_parammaps[@]}
+        do
+            declare -n map=${map_name}
+            if [ -n "${map[validationarraynames]}" ]
+            then
+                echo "## ${map[fullname]}"
+                for validation_array_name in ${map[validationarraynames]}
+                do
+                    declare -p "${validation_array_name}" || return "${SA_PARSE_INTERNAL_ERROR}"
+                done
+            fi
+        done
+        echo
+
+        echo "# option doc arrays"
+        for map_name in ${sa_optionmaps[@]}
+        do
+            declare -n map=${map_name}
+            declare -n docarray=${map[docarray]}
+            if [ "${#docarray[@]}" -gt 0 ]
+            then
+                echo "## ${map[fullname]}"
+                declare -p ${map[docarray]} || return "${SA_PARSE_INTERNAL_ERROR}"
+            fi
+        done
+        echo
+
+        echo "# param doc arrays"
+        for map_name in ${sa_parammaps[@]}
+        do
+            declare -n map=${map_name}
+            declare -n docarray=${map[docarray]}
+            if [ "${#docarray[@]}" -gt 0 ]
+            then
+                echo "## ${map[fullname]}"
+                declare -p ${map[docarray]} || return "${SA_PARSE_INTERNAL_ERROR}"
+            fi
+        done
+        echo
+
+        echo "# option valid values arrays"
+        for map_name in ${sa_optionmaps[@]}
+        do
+            declare -n map=${map_name}
+            if [ -n "${map[validvaluesarray]}" ]
+            then
+                echo "## ${map[fullname]}"
+                declare -n validvaluesarray=${map[validvaluesarray]}
+                declare -p ${map[validvaluesarray]} || return "${SA_PARSE_INTERNAL_ERROR}"
+            fi
+        done
+        echo
+        echo "# param valid values arrays"
+        for map_name in ${sa_parammaps[@]}
+        do
+            declare -n map=${map_name}
+            if [ -n "${map[validvaluesarray]}" ]
+            then
+                echo "## ${map[fullname]}"
+                declare -n validvaluesarray=${map[validvaluesarray]}
+                declare -p ${map[validvaluesarray]} || return "${SA_PARSE_INTERNAL_ERROR}"
+            fi
+        done
+        echo
+
+        echo "# usage instructions"
+        declare -p sa_synopsis_text || return "${SA_PARSE_INTERNAL_ERROR}"
+        [ -n "${sa_description_text}" ] && { declare -p sa_description_text || return "${SA_PARSE_INTERNAL_ERROR}"; }
+        [ -n "${sa_parameters_text}" ] && { declare -p sa_parameters_text || return "${SA_PARSE_INTERNAL_ERROR}"; }
+        [ -n "${sa_options_text}" ] && { declare -p sa_options_text || return "${SA_PARSE_INTERNAL_ERROR}"; }
+        echo
+    } | sed 's/^declare/declare -g/' > "${temporary_cache_file}"
+    local cache_writing_status="${PIPESTATUS[0]}"
+    if [ "${cache_writing_status}" -ne 0 ]
+    then
+        log ERROR "Failed to write cache: ${cache_writing_status}"
+        return "${SA_PARSE_INTERNAL_ERROR}"
+    fi
+    log CONFIG "Wrote $(wc -c < "${temporary_cache_file}") bytes to temporary cache file"
+    mv "${temporary_cache_file}" "${cached_options}" || return
+    log CONFIG "Final cache file ready: '${cached_options}'"
+}
+
+sa_generate_valid_values_string() {
+    local mapname="$1"
+    if [ -z "${mapname}" ]
+    then
+        echo "Usage: $FUNCNAME <entry map name>" >&2
+        return 1
+    fi
+    declare -n entry="${mapname}"
+
+    if [ -n "${entry[validvaluesarray]}" ]
+    then
+        declare -n validvalues="${entry[validvaluesarray]}"
+    elif [ -n "${entry[validvaluesfile]}" ]
+    then
+        local validvaluesfile=$(envsubst <<< "${entry[validvaluesfile]}")
+        mapfile -t validvalues < "${validvaluesfile}"
+    elif [ -n "${entry[validvaluescommand]}" ]
+    then
+        local validvaluescommand="${entry[validvaluescommand]}"
+        mapfile -t validvalues < <(eval "${validvaluescommand}")
+    else
+        return 0 # valid_values_string is left empty
+    fi
+    sa_enclose="'" sa_last_delim=", and " sa_concatenate "${validvalues[@]}"
+}
+
+sa_dump_options() {
+    local msg_level="$1"; shift
+    log_enabled "$msg_level" || return
+
+    log_vars_in_array $msg_level sa_options
+    log "$msg_level" ""
+    log_vars_in_array $msg_level sa_flags
+    log "$msg_level" ""
+    log_vars_in_array $msg_level sa_optionmaps
+    log "$msg_level" ""
+    log_vars_in_map $msg_level sa_fullnames
+    log "$msg_level" ""
+    log_vars_in_map $msg_level sa_mapnames
+    log "$msg_level" ""
+}
+
+sa_dump_option_values() {
+    local msg_level="$1"; shift
+    log_enabled "$msg_level" || return
+
+    local mapname
+    for mapname in "${sa_optionmaps[@]}"
+    do
+        local first_flagvar=true
+        declare -n map=$mapname
+        local flagvar
+        for flagvar in ${map[flagvars]}
+        do
+            ${first_flagvar} || echo -n "; "
+            echo -n "${flagvar}=${!flagvar}"
+            first_flagvar=false
+        done
+        echo
+    done
+}
+
+sa_dump_option_attributes() {
+    local msg_level="$1"; shift
+    log_enabled "$msg_level" || return
+
+    # Dump option attribute maps
+    log "$msg_level" "##### Option maps #####"
+    local mapname
+    for mapname in "${sa_optionmaps[@]}"
+    do
+        log_vars_in_map "$msg_level" "$mapname" $*
+        log "$msg_level" ""
+    done
+}
+
+sa_dump_valid_values() {
+    local msg_level="$1"; shift
+    log_enabled "$msg_level" || return
+
+    # Dump "valid values" arrays
+    log "$msg_level" "##### Valid values arrays #####"
+    local mapname
+    for mapname in "${sa_optionmaps[@]}" "${sa_parammaps[@]}"
+    do
+        declare -n map=$mapname
+        if [ -n "${map[validvaluesarray]}" ]
+        then
+            log_vars_in_array "$msg_level" "${map[validvaluesarray]}"
+            log "$msg_level" ""
+        fi
+    done
+}
+
+sa_dump_validation() {
+    local msg_level="$1"; shift
+    log_enabled "$msg_level" || return
+
+    log "$msg_level" "##### Validation command modifiers #####"
+    log_vars "$msg_level" sa_validation_command_modifiers
+
+    # Dump "validation" arrays
+    log "$msg_level" "##### Validation arrays #####"
+    local mapname
+    for mapname in "${sa_optionmaps[@]}"
+    do
+        declare -n map=$mapname
+        if [ -n "${map[validationarraynames]}" ]
+        then
+            log_vars "$msg_level" ${map[validationarraynames]} " "
+        fi
+    done
+}
+
+sa_dump_params() {
+    local msg_level="$1"; shift
+    log_enabled "$msg_level" || return
+
+    # Dump parameters
+    log "$msg_level" "##### Parameters #####"
+    log_vars_in_array $msg_level sa_params
+    log "$msg_level" ""
+}
+
+sa_dump_param_attributes() {
+    local msg_level="$1"; shift
+    log_enabled "$msg_level" || return
+
+    # Dump param attribute maps
+    log "$msg_level" "##### Parameter maps #####"
+    local mapname
+    for mapname in "${sa_parammaps[@]}"
+    do
+        log_vars_in_map "$msg_level" "$mapname"
+        log "$msg_level" ""
+    done
+}
+
+sa_dump_getopt_strings() {
+    local msg_level="$1"; shift
+    log_enabled "$msg_level" || return
+    log_vars "$msg_level" sa_getopt_short_options sa_getopt_long_options
+}
+
+sa_debug_dump() {
+    local msg_level="$1"; shift
+    log_enabled "$msg_level" || return
+
+    sa_dump_options "$msg_level"
+    sa_dump_option_attributes "$msg_level"
+    sa_dump_valid_values "$msg_level"
+    sa_dump_validation "$msg_level"
+    sa_dump_params "$msg_level"
+    sa_dump_param_attributes "$msg_level"
+    sa_dump_getopt_strings "$msg_level"
+}

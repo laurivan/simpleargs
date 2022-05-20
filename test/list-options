@@ -1,0 +1,183 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" \
+             -u/--users arg @@egrep "^[a-z ]+$" @multivalue, \
+             -g/--groups wheel,sudo,kvm,tcpdump,postgres,libvirt @multivalue, \
+             --age @multivalue: \
+             -n/--name @multivalue, \
+             --number @multivalue \
+             --validated-number arg @@int @multivalue \
+             --at-separated @multivalue@ \
+             --percent-separated @multivalue% \
+             --plus-separated @multivalue+ \
+             --b-separated @multivalueB
+
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_zero_values() {
+    # --users ""
+    value 0 source_result parse_result process_result
+    arrayvalue u
+    arrayvalue users
+    [ $# -eq 0 ]
+}
+
+test_one_value() {
+    # --users kate
+    value 0 source_result parse_result process_result
+    arrayvalue u kate
+    arrayvalue users kate
+    [ $# -eq 0 ]
+}
+
+test_multiple_values() {
+    # --users kate,jack,joey
+    value 0 source_result parse_result process_result
+    arrayvalue u kate jack joey
+    arrayvalue users kate jack joey
+    [ $# -eq 0 ]
+}
+
+test_spaces() {
+    # --users "kate brewster,jack kennedy,joey"
+    value 0 source_result parse_result process_result
+    arrayvalue u kate\ brewster jack\ kennedy joey
+    arrayvalue users kate\ brewster jack\ kennedy joey
+    [ $# -eq 0 ]
+}
+
+test_zero_values_2() {
+    # -g ""
+    value 0 source_result parse_result process_result
+    arrayvalue g
+    arrayvalue groups
+    [ $# -eq 0 ]
+}
+
+test_one_value_2() {
+    # --groups sudo
+    value 0 source_result parse_result process_result
+    arrayvalue g sudo
+    arrayvalue groups sudo
+    [ $# -eq 0 ]
+}
+
+test_multiple_values_2() {
+    # -g wheel,kvm,libvirt
+    value 0 source_result parse_result process_result
+    arrayvalue g wheel kvm libvirt
+    arrayvalue groups wheel kvm libvirt
+    [ $# -eq 0 ]
+}
+
+test_empty_values() {
+    # --age "12,1::13"
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_custom_separator_valid() {
+    # --age 12,4:13:18,4
+    value 0 source_result parse_result process_result
+    arrayvalue age 12,4 13 18,4
+    [ $# -eq 0 ]
+}
+
+test_additive_option() {
+    # -n jack --age 19,3:7,5 -n joanne pos_par1 -n jack pos_par2 "pos param 3" -n juno
+    value 0 source_result parse_result process_result
+    arrayvalue age 19,3 7,5
+    arrayvalue n jack joanne jack juno
+    arrayvalue name jack joanne jack juno
+    [ $# -eq 3 ]
+    [ "$1" = "pos_par1" ]
+    [ "$2" = "pos_par2" ]
+    [ "$3" = "pos param 3" ]
+}
+
+test_single_multivalue_valid_1() {
+    # --number 3 param1
+    value 0 source_result parse_result process_result
+    arrayvalue number 3
+    [ $# -eq 1 ]
+    [ "$1" = "param1" ]
+}
+
+test_single_multivalue_valid_2() {
+    # --number 3 param1 --number 2
+    value 0 source_result parse_result process_result
+    arrayvalue number 3 2
+    [ $# -eq 1 ]
+    [ "$1" = "param1" ]
+}
+
+test_single_multivalue_invalid() {
+    # --number 3 param1 --number 2,5
+    value 0 source_result parse_result process_result
+    arrayvalue number 3 2,5
+    [ $# -eq 1 ]
+    [ "$1" = "param1" ]
+}
+
+test_validated_multivalue_invalid() {
+    # --validated-number 3 param1 --validated-number 2,5
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_at_separated_multivalue_one_value() {
+    # --at-separated "test value, maybe"
+    value 0 source_result parse_result process_result
+    arrayvalue at_separated "test value, maybe"
+}
+
+test_at_separated_multivalue_two_values() {
+    # --at-separated "the very first@test value, maybe"
+    value 0 source_result parse_result process_result
+    arrayvalue at_separated "the very first" "test value, maybe"
+}
+
+test_percent_separated_multivalue_one_value() {
+    # --percent-separated "test value, maybe"
+    value 0 source_result parse_result process_result
+    arrayvalue percent_separated "test value, maybe"
+}
+
+test_percent_separated_multivalue_two_values() {
+    # --percent-separated "the very first%test value, maybe"
+    value 0 source_result parse_result process_result
+    arrayvalue percent_separated "the very first" "test value, maybe"
+}
+
+test_plus_separated_multivalue_one_value() {
+    # --plus-separated "test value, maybe"
+    value 0 source_result parse_result process_result
+    arrayvalue plus_separated "test value, maybe"
+}
+
+test_plus_separated_multivalue_two_values() {
+    # --plus-separated "the very first+test value, maybe"
+    value 0 source_result parse_result process_result
+    arrayvalue plus_separated "the very first" "test value, maybe"
+}
+
+test_b_separated_multivalue_one_value() {
+    # --b-separated "test value, perhaps"
+    value 0 source_result parse_result process_result
+    arrayvalue b_separated "test value, perhaps"
+}
+
+test_b_separated_multivalue_two_values() {
+    # --b-separated "the very firstBtest value, maybe"
+    value 0 source_result parse_result process_result
+    arrayvalue b_separated "the very first" "test value, maybe"
+}

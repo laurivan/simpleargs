@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" \
+             -n/--name @validvaluesfile='${SA_TEST_RESOURCES}/valid-values-file/sa-valid-names' \
+             --new-name @validvaluesfile='${SA_TEST_RESOURCES}/valid-values-file/sa-valid-names' @@egrep '^[A-Z][a-z]+$' \
+             --countries @validvaluesfile='${SA_TEST_RESOURCES}/valid-values-file/sa-valid-countries' @multivalue, \
+             --fruit @validvaluesfile=/tmp/non-existing-file-fruits
+
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_valid_1() {
+    # -n Joey --countries Poland,France,UK
+    value 0 source_result parse_result process_result
+    value Joey n name
+    arrayvalue countries Poland France UK
+    [ $# -eq 0 ]
+}
+
+test_valid_2() {
+    # -n Jeff --countries Argentina
+    value 0 source_result parse_result process_result
+    value Jeff n name
+    arrayvalue countries Argentina
+    [ $# -eq 0 ]
+}
+
+test_valid_3() {
+    # -n Jared
+    value 0 source_result parse_result process_result
+    value Jared n name
+    arrayvalue countries
+    [ $# -eq 0 ]
+}
+
+test_invalid_1() {
+    # -n Jefff --countries Poland,France,UK
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_invalid_2() {
+    # -n Jeff --countries Poland,France,UK,Egypt
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_invalid_empty() {
+    # -n "" --countries Poland,France,UK
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_non_existing_validvalues_file() {
+    # --fruit apple
+
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_with_regexp_old_valid_value() {
+    # --new-name Joey
+    value 0 source_result parse_result process_result
+    value Joey new_name
+    [ $# -eq 0 ]
+}
+
+test_with_regexp_invalid_value() {
+    # --new-name JAck
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_with_regexp_new_valid_value() {
+    # --new-name Jonathan
+    value 0 source_result parse_result process_result
+    value Jonathan new_name
+    [ $# -eq 0 ]
+}
+
+test_invalid_name_error_printout() {
+    # --name Jeremy
+    #before export log_indent_enabled=false log_display_level=false
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+    diff "${sa_test_stdout}" - <<EOF
+-n/--name: invalid value 'Jeremy'
+Valid values are: 'Jeff', 'Jack', 'Joey', 'Jim', 'James' and 'Jared'.
+EOF
+}
+
+test_invalid_name_error_printout_max_values() {
+    # --name Jeremy
+    #before export log_indent_enabled=false log_display_level=false
+    #before export sa_print_max_valid_values=5
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+    diff "${sa_test_stdout}" - <<EOF
+-n/--name: invalid value 'Jeremy'
+Valid values are: 'Jeff', 'Jack', 'Joey', 'Jim', 'James',...
+EOF
+}
+
+test_invalid_name_error_printout_max_values_length() {
+    # --name Jeremy
+    #before export log_indent_enabled=false log_display_level=false
+    #before export sa_print_max_valid_values_length=30 sa_print_max_valid_values=20
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+    diff "${sa_test_stdout}" - <<EOF
+-n/--name: invalid value 'Jeremy'
+Valid values are: 'Jeff', 'Jack', 'Joey', 'Jim',...
+EOF
+}

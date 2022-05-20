@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+###########################################
+
+test_default_tokens_set_to_string() {
+    # -h
+    sa_default_tokens=@help@
+
+    [ "$source_result" -eq 0 ]
+
+    sa_parse "$0" -p port -v/--verbose "<input>" ||
+        parse_result=$?
+
+    value 0 source_result
+    value "${SA_PARSE_INVALID_ARGUMENTS}" parse_result
+}
+
+test_empty_default_tokens() {
+    # -h jack
+    sa_default_tokens=()
+
+    [ "$source_result" -eq 0 ]
+
+    sa_parse "$0" -h/--human arg --version arg
+    parse_result=$?
+    [ "$parse_result" -eq 0 ]
+    sa_process "$@"
+    process_result=$?
+    [ "$process_result" -eq 0 ] && eval "set -- ${sa_args}"
+
+    value 0 source_result parse_result process_result
+    value jack h human
+    empty version
+}

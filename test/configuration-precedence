@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0"
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_configuration_1() {
+    #
+    #before export sa_user_settings="${SA_TEST_RESOURCES}/configuration-precedence-user_settings_1"
+    #before export sa_global_settings="${SA_TEST_RESOURCES}/configuration-precedence-global_settings_1"
+    value 0 source_result parse_result process_result
+    value WARN effective_log_level_name
+    value 60 effective_log_level
+}
+
+test_configuration_1_override() {
+    #
+    #before export sa_user_settings="${SA_TEST_RESOURCES}/configuration-precedence-user_settings_1"
+    #before export sa_global_settings="${SA_TEST_RESOURCES}/configuration-precedence-global_settings_1"
+    #before export log_level=INFO
+    value 0 source_result parse_result process_result
+    value INFO effective_log_level_name
+    value 50 effective_log_level
+}
+
+test_configuration_2() {
+    #
+    #before export sa_user_settings="${SA_TEST_RESOURCES}/configuration-precedence-user_settings_2"
+    #before export sa_global_settings="${SA_TEST_RESOURCES}/configuration-precedence-global_settings_2"
+    value 0 source_result parse_result process_result
+    value ERROR effective_log_level_name
+    value 70 effective_log_level
+}
+
+test_configuration_2_override() {
+    #
+    #before export sa_user_settings="${SA_TEST_RESOURCES}/configuration-precedence-user_settings_2"
+    #before export sa_global_settings="${SA_TEST_RESOURCES}/configuration-precedence-global_settings_2"
+    #before export log_level=FINER
+    value 0 source_result parse_result process_result
+    value FINER effective_log_level_name
+    value 20 effective_log_level
+}
+
+test_configuration_no_configuration_files() {
+    #
+    #before export sa_user_settings="${SA_TEST_RESOURCES}/non-existing"
+    #before export sa_global_settings="${SA_TEST_RESOURCES}/non-existing"
+    value 0 source_result parse_result process_result
+    value WARN effective_log_level_name
+    value 60 effective_log_level
+}
+
+test_configuration_no_configuration_files_override() {
+    #
+    #before export sa_user_settings="${SA_TEST_RESOURCES}/non-existing"
+    #before export sa_global_settings="${SA_TEST_RESOURCES}/non-existing"
+    #before export log_level=FINEST
+    value 0 source_result parse_result process_result
+    value FINEST effective_log_level_name
+    value 10 effective_log_level
+}

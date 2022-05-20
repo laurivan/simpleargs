@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" -u "<file>"; parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_no_arguments() {
+    #
+    value 0 source_result parse_result
+    value "${SA_PROCESS_INVALID_ARGUMENTS}" process_result
+}
+
+test_one_positional_argument() {
+    # my\ file.txt
+    value 0 source_result parse_result process_result
+    value false u
+    value "my file.txt" file
+    [ $# -eq 0 ]
+}
+
+test_option() {
+    # -u
+    value 0 source_result parse_result
+    value "${SA_PROCESS_INVALID_ARGUMENTS}" process_result
+}
+
+test_option_and_argument() {
+    # -u "only argument"
+    value 0 source_result parse_result process_result
+    value true u
+    value "only argument" file
+    [ $# -eq 0 ]
+}

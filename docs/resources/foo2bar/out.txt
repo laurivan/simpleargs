@@ -1,0 +1,4 @@
+--- File: input.txt ---
+This bar might become bar.
+--- File: input-two.txt ---
+Something might happen to this bar as well.

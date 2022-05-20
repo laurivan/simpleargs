@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" -g "<file>"
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_create_cached_resources() {
+    # temp.txt
+    #before [ -d ~/.simpleargs.d.tmp ] && rm -r ~/.simpleargs.d.tmp
+    #before [ -d ~/.simpleargs.d ] && mv ~/.simpleargs.d ~/.simpleargs.d.tmp
+    #after [ -d ~/.simpleargs.d ] && rm -r ~/.simpleargs.d
+    #after [ -d ~/.simpleargs.d.tmp ] && mv ~/.simpleargs.d.tmp ~/.simpleargs.d
+    value 0 source_result parse_result process_result
+    [ -f ~/.simpleargs.d/cached/"$(basename "$0")" ]
+    [ -d ~/.simpleargs.d/completed-scripts/"$(basename "$0")" ]
+    [ -f ~/.simpleargs.d/bin/man/man1/"$(basename "$0")".1.gz ]
+}

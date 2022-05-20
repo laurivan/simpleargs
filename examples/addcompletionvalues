@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+sa_short_description="demonstrate adaptive completion"
+sa_long_description=(
+    "Prints the name given as a parameter. Additionally, adds the name to the list of valid, and thus autocompleted values. Normally @validvaluesfile would define the only valid values for the argument. However, since the parameter has also the @@grep validation directive also values not in the valid values file are considered."
+)
+
+log_level=${log_level:-INFO}
+# -------------------------------- simpleargs --------------------------------
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+sa_parse "$0" \
+         "<name>" @validvaluesfile="\${HOME}/.$(basename "$0")-names" \
+         @@egrep "^[A-Z][a-z]+$"
+
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------
+
+log_vars INFO name
+
+[ -f "${HOME}/.$(basename "$0")-names" ] || touch "${HOME}/.$(basename "$0")-names"
+
+if grep --silent "^${name}$" "${HOME}/.$(basename "$0")-names"
+then
+    log INFO "Already in valid values file: '${name}'"
+else
+    log INFO "Adding new valid name: '${name}'"
+    echo "${name}" >> "${HOME}/.$(basename "$0")-names"
+fi
+
+# Process ${name}

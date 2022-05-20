@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" \
+             "[<input 1>]" \
+             "[<input 2>]" @varname=second_input \
+             "[<input 3>]"
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_no_arguments() {
+    #
+    value 0 source_result parse_result process_result
+    [ $# -eq 0 ]
+}
+
+test_non_existing_option() {
+    # -g
+    value 0 source_result parse_result
+    value "${SA_PROCESS_GETOPT_FAILED}" process_result
+}
+
+test_one_parameter() {
+    # "first and only"
+    value 0 source_result parse_result process_result
+    value "first and only" input_1
+    [ $# -eq 0 ]
+}
+
+test_two_parameters() {
+    # first "second one"
+    value 0 source_result parse_result process_result
+    value first input_1
+    value "second one" second_input
+    empty input_2
+    [ $# -eq 0 ]
+}
+
+test_three_parameters() {
+    # first "second one" "the third arg"
+    value 0 source_result parse_result process_result
+    value first input_1
+    value "second one" second_input
+    empty input_2
+    value "the third arg" input_3
+    [ $# -eq 0 ]
+}
+
+test_positional_parameters() {
+    # first "second one" "the third arg" foo " bar bar"
+    value 0 source_result parse_result process_result
+    value first input_1
+    value "second one" second_input
+    empty input_2
+    value "the third arg" input_3
+    [ $# -eq 2 ]
+    [ "$1" = foo ]
+    [ "$2" = " bar bar" ]
+}
+
+test_spaces_and_quotes() {
+    # "    " "'sec'ond one" "''''" \"foo " bar bar"
+    value 0 source_result parse_result process_result
+    value "    " input_1
+    value "'sec'ond one" second_input
+    empty input_2
+    value "''''" input_3
+    [ $# -eq 2 ]
+    [ "$1" = '"foo' ]
+    [ "$2" = " bar bar" ]
+}

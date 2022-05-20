@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" "<input>" \
+             "[<operation>]" @validvalues=add,subtract,multiply,divide \
+             "[<output>]..."
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_no_args() {
+    #
+    value 0 source_result parse_result
+    value "${SA_PROCESS_INVALID_ARGUMENTS}" process_result
+}
+
+test_one_arg() {
+    # input.txt
+    value 0 source_result parse_result process_result
+    value "input.txt" input
+    empty operation
+    arrayvalue output # Empty array
+    [ $# -eq 0 ]
+}
+
+test_two_args() {
+    # input.txt add
+    value 0 source_result parse_result process_result
+    value "input.txt" input
+    value "add" operation
+    arrayvalue output # Empty array
+    [ $# -eq 0 ]
+}
+
+test_three_args() {
+    # input.txt add output1.txt
+    value 0 source_result parse_result process_result
+    value "input.txt" input
+    value "add" operation
+    arrayvalue output output1.txt
+    [ $# -eq 0 ]
+}
+
+test_four_args() {
+    # input.txt add output1.txt output2.txt
+    value 0 source_result parse_result process_result
+    value "input.txt" input
+    value "add" operation
+    arrayvalue output output1.txt output2.txt
+    [ $# -eq 0 ]
+}
+
+test_five_args() {
+    # input.txt add output1.txt output2.txt "third output.txt"
+    value 0 source_result parse_result process_result
+    value "input.txt" input
+    value "add" operation
+    arrayvalue output output1.txt output2.txt "third output.txt"
+    [ $# -eq 0 ]
+}
+
+test_validation() {
+    # input.txt adds output1.txt
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}

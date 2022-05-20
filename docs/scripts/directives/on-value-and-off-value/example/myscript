@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+# -------------------------------- simpleargs --------------------------------
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+sa_parse "$0" --verbose \
+         --encrypt @onvalue=yes \
+         --sign @offvalue=no \
+         --verify @onvalue=positive @offvalue=negative
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------
+# ...
+echo "verbose: '${verbose}'"
+echo "encrypt: '${encrypt}'"
+echo "   sign: '${sign}'"
+echo " verify: '${verify}'"

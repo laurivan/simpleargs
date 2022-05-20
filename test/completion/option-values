@@ -1,0 +1,858 @@
+#!/usr/bin/env bash
+
+. ${SIMPLEARGS_PROJECT}/src/simpleargs-completion-test-utils
+set -e
+init_terminal ${SIMPLEARGS_PROJECT}/test/resources/example-files-dir
+# ------------------------
+type_command 'validationexample -p'
+tab
+assert_terminal_contents <<'EOF'
+>> validationexample -p 
+EOF
+
+tabtab
+assert_terminal_contents <<'EOF'
+>> validationexample -p 
+atmega328p  attiny85    promini     
+>> validationexample -p 
+EOF
+
+type_command 'a'
+tab
+assert_terminal_contents <<'EOF'
+>> validationexample -p 
+atmega328p  attiny85    promini     
+>> validationexample -p at
+EOF
+
+tabtab
+assert_terminal_contents <<'EOF'
+>> validationexample -p 
+atmega328p  attiny85    promini     
+>> validationexample -p at
+atmega328p  attiny85    
+>> validationexample -p at
+EOF
+
+type_command 'm'
+tab
+assert_terminal_contents <<'EOF'
+>> validationexample -p 
+atmega328p  attiny85    promini     
+>> validationexample -p at
+atmega328p  attiny85    
+>> validationexample -p atmega328p 
+EOF
+
+type_command '--b'
+tab
+assert_terminal_contents <<'EOF'
+>> validationexample -p 
+atmega328p  attiny85    promini     
+>> validationexample -p at
+atmega328p  attiny85    
+>> validationexample -p atmega328p --baudrate 
+EOF
+
+tabtab
+assert_terminal_contents <<'EOF'
+>> validationexample -p 
+atmega328p  attiny85    promini     
+>> validationexample -p at
+atmega328p  attiny85    
+>> validationexample -p atmega328p --baudrate 
+115200  57600   9600    
+>> validationexample -p atmega328p --baudrate 
+EOF
+
+type_command '1'
+tab
+assert_terminal_contents <<'EOF'
+>> validationexample -p 
+atmega328p  attiny85    promini     
+>> validationexample -p at
+atmega328p  attiny85    
+>> validationexample -p atmega328p --baudrate 
+115200  57600   9600    
+>> validationexample -p atmega328p --baudrate 115200 
+EOF
+
+reset_terminal
+# ------------------------
+type_command 'validationexample --p'
+tabtab
+assert_terminal_contents <<'EOF'
+>> validationexample --p
+--part     --pass     --pattern  --point    
+>> validationexample --p
+EOF
+
+type_command 'as'
+tab
+assert_terminal_contents <<'EOF'
+>> validationexample --p
+--part     --pass     --pattern  --point    
+>> validationexample --pass 
+EOF
+
+type_command '80'
+tabtab
+assert_terminal_contents <<'EOF'
+>> validationexample --p
+--part     --pass     --pattern  --point    
+>> validationexample --pass 80
+EOF
+
+type_command '80 '
+tabtab
+assert_terminal_contents <<'EOF'
+>> validationexample --p
+--part     --pass     --pattern  --point    
+>> validationexample --pass 8080 
+sub-dir/    video1.mp4  
+>> validationexample --pass 8080 
+EOF
+
+type_command 'v'
+tab
+assert_terminal_contents <<'EOF'
+>> validationexample --p
+--part     --pass     --pattern  --point    
+>> validationexample --pass 8080 
+sub-dir/    video1.mp4  
+>> validationexample --pass 8080 video1.mp4 
+EOF
+
+type_command '--d'
+tab
+assert_terminal_contents <<'EOF'
+>> validationexample --p
+--part     --pass     --pattern  --point    
+>> validationexample --pass 8080 
+sub-dir/    video1.mp4  
+>> validationexample --pass 8080 video1.mp4 --dogs 
+EOF
+
+tabtab
+assert_terminal_contents <<'EOF'
+>> validationexample --p
+--part     --pass     --pattern  --point    
+>> validationexample --pass 8080 
+sub-dir/    video1.mp4  
+>> validationexample --pass 8080 video1.mp4 --dogs 
+Emperor  Jack     Tim      Tom      Wuf      
+>> validationexample --pass 8080 video1.mp4 --dogs 
+EOF
+
+type_command 'Em'
+tab
+assert_terminal_contents <<'EOF'
+>> validationexample --p
+--part     --pass     --pattern  --point    
+>> validationexample --pass 8080 
+sub-dir/    video1.mp4  
+>> validationexample --pass 8080 video1.mp4 --dogs 
+Emperor  Jack     Tim      Tom      Wuf      
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor
+EOF
+
+tabtab
+assert_terminal_contents <<'EOF'
+>> validationexample --p
+--part     --pass     --pattern  --point    
+>> validationexample --pass 8080 
+sub-dir/    video1.mp4  
+>> validationexample --pass 8080 video1.mp4 --dogs 
+Emperor  Jack     Tim      Tom      Wuf      
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor
+Emperor   Emperor+  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor
+EOF
+
+type_command '+'
+tabtab
+assert_terminal_contents <<'EOF'
+>> validationexample --p
+--part     --pass     --pattern  --point    
+>> validationexample --pass 8080 
+sub-dir/    video1.mp4  
+>> validationexample --pass 8080 video1.mp4 --dogs 
+Emperor  Jack     Tim      Tom      Wuf      
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor
+Emperor   Emperor+  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+
+Emperor+Emperor  Emperor+Tim      Emperor+Wuf      
+Emperor+Jack     Emperor+Tom      
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+
+EOF
+
+type_command 'T'
+tabtab
+assert_terminal_contents <<'EOF'
+>> validationexample --p
+--part     --pass     --pattern  --point    
+>> validationexample --pass 8080 
+sub-dir/    video1.mp4  
+>> validationexample --pass 8080 video1.mp4 --dogs 
+Emperor  Jack     Tim      Tom      Wuf      
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor
+Emperor   Emperor+  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+
+Emperor+Emperor  Emperor+Tim      Emperor+Wuf      
+Emperor+Jack     Emperor+Tom      
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+T
+Emperor+Tim  Emperor+Tom  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+T
+EOF
+
+type_command 'o'
+tab
+assert_terminal_contents <<'EOF'
+>> validationexample --p
+--part     --pass     --pattern  --point    
+>> validationexample --pass 8080 
+sub-dir/    video1.mp4  
+>> validationexample --pass 8080 video1.mp4 --dogs 
+Emperor  Jack     Tim      Tom      Wuf      
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor
+Emperor   Emperor+  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+
+Emperor+Emperor  Emperor+Tim      Emperor+Wuf      
+Emperor+Jack     Emperor+Tom      
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+T
+Emperor+Tim  Emperor+Tom  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+Tom
+EOF
+
+tabtab
+assert_terminal_contents <<'EOF'
+>> validationexample --p
+--part     --pass     --pattern  --point    
+>> validationexample --pass 8080 
+sub-dir/    video1.mp4  
+>> validationexample --pass 8080 video1.mp4 --dogs 
+Emperor  Jack     Tim      Tom      Wuf      
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor
+Emperor   Emperor+  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+
+Emperor+Emperor  Emperor+Tim      Emperor+Wuf      
+Emperor+Jack     Emperor+Tom      
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+T
+Emperor+Tim  Emperor+Tom  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+Tom
+Emperor+Tom   Emperor+Tom+  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+Tom
+EOF
+
+type_command ' '
+type_command '--ca'
+tab
+assert_terminal_contents <<'EOF'
+>> validationexample --p
+--part     --pass     --pattern  --point    
+>> validationexample --pass 8080 
+sub-dir/    video1.mp4  
+>> validationexample --pass 8080 video1.mp4 --dogs 
+Emperor  Jack     Tim      Tom      Wuf      
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor
+Emperor   Emperor+  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+
+Emperor+Emperor  Emperor+Tim      Emperor+Wuf      
+Emperor+Jack     Emperor+Tom      
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+T
+Emperor+Tim  Emperor+Tom  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+Tom
+Emperor+Tom   Emperor+Tom+  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+Tom --cats 
+EOF
+
+tabtab
+assert_terminal_contents <<'EOF'
+>> validationexample --p
+--part     --pass     --pattern  --point    
+>> validationexample --pass 8080 
+sub-dir/    video1.mp4  
+>> validationexample --pass 8080 video1.mp4 --dogs 
+Emperor  Jack     Tim      Tom      Wuf      
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor
+Emperor   Emperor+  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+
+Emperor+Emperor  Emperor+Tim      Emperor+Wuf      
+Emperor+Jack     Emperor+Tom      
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+T
+Emperor+Tim  Emperor+Tom  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+Tom
+Emperor+Tom   Emperor+Tom+  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+Tom --cats 
+Elmer     Garfield  Pinky     
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+Tom --cats 
+EOF
+
+type_command 'Pin'
+tab
+assert_terminal_contents <<'EOF'
+>> validationexample --p
+--part     --pass     --pattern  --point    
+>> validationexample --pass 8080 
+sub-dir/    video1.mp4  
+>> validationexample --pass 8080 video1.mp4 --dogs 
+Emperor  Jack     Tim      Tom      Wuf      
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor
+Emperor   Emperor+  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+
+Emperor+Emperor  Emperor+Tim      Emperor+Wuf      
+Emperor+Jack     Emperor+Tom      
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+T
+Emperor+Tim  Emperor+Tom  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+Tom
+Emperor+Tom   Emperor+Tom+  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+Tom --cats 
+Elmer     Garfield  Pinky     
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+Tom --cats Pinky
+EOF
+
+tabtab
+assert_terminal_contents <<'EOF'
+>> validationexample --p
+--part     --pass     --pattern  --point    
+>> validationexample --pass 8080 
+sub-dir/    video1.mp4  
+>> validationexample --pass 8080 video1.mp4 --dogs 
+Emperor  Jack     Tim      Tom      Wuf      
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor
+Emperor   Emperor+  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+
+Emperor+Emperor  Emperor+Tim      Emperor+Wuf      
+Emperor+Jack     Emperor+Tom      
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+T
+Emperor+Tim  Emperor+Tom  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+Tom
+Emperor+Tom   Emperor+Tom+  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+Tom --cats 
+Elmer     Garfield  Pinky     
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+Tom --cats Pinky
+Pinky   Pinky:  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+Tom --cats Pinky
+EOF
+
+type_command ':'
+tabtab
+assert_terminal_contents <<'EOF'
+>> validationexample --p
+--part     --pass     --pattern  --point    
+>> validationexample --pass 8080 
+sub-dir/    video1.mp4  
+>> validationexample --pass 8080 video1.mp4 --dogs 
+Emperor  Jack     Tim      Tom      Wuf      
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor
+Emperor   Emperor+  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+
+Emperor+Emperor  Emperor+Tim      Emperor+Wuf      
+Emperor+Jack     Emperor+Tom      
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+T
+Emperor+Tim  Emperor+Tom  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+Tom
+Emperor+Tom   Emperor+Tom+  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+Tom --cats 
+Elmer     Garfield  Pinky     
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+Tom --cats Pinky
+Pinky   Pinky:  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+Tom --cats Pinky:
+Elmer     Garfield  Pinky     
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+Tom --cats Pinky:
+EOF
+
+type_command 'G'
+tab
+assert_terminal_contents <<'EOF'
+>> validationexample --p
+--part     --pass     --pattern  --point    
+>> validationexample --pass 8080 
+sub-dir/    video1.mp4  
+>> validationexample --pass 8080 video1.mp4 --dogs 
+Emperor  Jack     Tim      Tom      Wuf      
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor
+Emperor   Emperor+  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+
+Emperor+Emperor  Emperor+Tim      Emperor+Wuf      
+Emperor+Jack     Emperor+Tom      
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+T
+Emperor+Tim  Emperor+Tom  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+Tom
+Emperor+Tom   Emperor+Tom+  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+Tom --cats 
+Elmer     Garfield  Pinky     
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+Tom --cats Pinky
+Pinky   Pinky:  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+Tom --cats Pinky:
+Elmer     Garfield  Pinky     
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+Tom --cats Pinky:Garfield
+EOF
+
+tabtab
+assert_terminal_contents <<'EOF'
+>> validationexample --p
+--part     --pass     --pattern  --point    
+>> validationexample --pass 8080 
+sub-dir/    video1.mp4  
+>> validationexample --pass 8080 video1.mp4 --dogs 
+Emperor  Jack     Tim      Tom      Wuf      
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor
+Emperor   Emperor+  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+
+Emperor+Emperor  Emperor+Tim      Emperor+Wuf      
+Emperor+Jack     Emperor+Tom      
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+T
+Emperor+Tim  Emperor+Tom  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+Tom
+Emperor+Tom   Emperor+Tom+  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+Tom --cats 
+Elmer     Garfield  Pinky     
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+Tom --cats Pinky
+Pinky   Pinky:  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+Tom --cats Pinky:
+Elmer     Garfield  Pinky     
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+Tom --cats Pinky:Garfield
+Garfield   Garfield:  
+>> validationexample --pass 8080 video1.mp4 --dogs Emperor+Tom --cats Pinky:Garfield
+EOF
+
+type_command ' '
+reset_terminal
+type_command 'validationexample -s'
+tab
+assert_terminal_contents <<'EOF'
+>> validationexample -s
+EOF
+
+tabtab
+assert_terminal_contents <<'EOF'
+>> validationexample -s
+-sname     -snone     -ssize     -stime     -sversion  -syes no   
+>> validationexample -s
+-sname     -snone     -ssize     -stime     -sversion  -syes no   
+>> validationexample -s
+EOF
+
+type_command 'y'
+tab
+assert_terminal_contents <<'EOF'
+>> validationexample -s
+-sname     -snone     -ssize     -stime     -sversion  -syes no   
+>> validationexample -s
+-sname     -snone     -ssize     -stime     -sversion  -syes no   
+>> validationexample -syes\ no 
+EOF
+
+type_command '--so'
+tab
+assert_terminal_contents <<'EOF'
+>> validationexample -s
+-sname     -snone     -ssize     -stime     -sversion  -syes no   
+>> validationexample -s
+-sname     -snone     -ssize     -stime     -sversion  -syes no   
+>> validationexample -syes\ no --sort
+EOF
+
+tabtab
+assert_terminal_contents <<'EOF'
+>> validationexample -s
+-sname     -snone     -ssize     -stime     -sversion  -syes no   
+>> validationexample -s
+-sname     -snone     -ssize     -stime     -sversion  -syes no   
+>> validationexample -syes\ no --sort
+--sort   --sort=  
+>> validationexample -syes\ no --sort
+EOF
+
+type_command '='
+tabtab
+assert_terminal_contents <<'EOF'
+>> validationexample -s
+-sname     -snone     -ssize     -stime     -sversion  -syes no   
+>> validationexample -s
+-sname     -snone     -ssize     -stime     -sversion  -syes no   
+>> validationexample -syes\ no --sort
+--sort   --sort=  
+>> validationexample -syes\ no --sort=
+name     none     size     time     version  yes no   
+>> validationexample -syes\ no --sort=
+EOF
+
+type_command 'n'
+tabtab
+assert_terminal_contents <<'EOF'
+>> validationexample -s
+-sname     -snone     -ssize     -stime     -sversion  -syes no   
+>> validationexample -s
+-sname     -snone     -ssize     -stime     -sversion  -syes no   
+>> validationexample -syes\ no --sort
+--sort   --sort=  
+>> validationexample -syes\ no --sort=
+name     none     size     time     version  yes no   
+>> validationexample -syes\ no --sort=n
+name  none  
+>> validationexample -syes\ no --sort=n
+EOF
+
+type_command 'a'
+tab
+assert_terminal_contents <<'EOF'
+>> validationexample -s
+-sname     -snone     -ssize     -stime     -sversion  -syes no   
+>> validationexample -s
+-sname     -snone     -ssize     -stime     -sversion  -syes no   
+>> validationexample -syes\ no --sort
+--sort   --sort=  
+>> validationexample -syes\ no --sort=
+name     none     size     time     version  yes no   
+>> validationexample -syes\ no --sort=n
+name  none  
+>> validationexample -syes\ no --sort=name 
+EOF
+
+reset_terminal
+type_command 'validationexample -e'
+tab
+assert_terminal_contents <<'EOF'
+>> validationexample -e 
+EOF
+
+tabtab
+assert_terminal_contents <<'EOF'
+>> validationexample -e 
+down   left   right  up     
+>> validationexample -e 
+EOF
+
+type_command 'do'
+tab
+assert_terminal_contents <<'EOF'
+>> validationexample -e 
+down   left   right  up     
+>> validationexample -e down 
+EOF
+
+reset_terminal
+type_command 'validationexample -vgt'
+tab
+assert_terminal_contents <<'EOF'
+>> validationexample -vgt 
+EOF
+
+type_command '-vgs'
+tab
+assert_terminal_contents <<'EOF'
+>> validationexample -vgt -vgs
+EOF
+
+tabtab
+assert_terminal_contents <<'EOF'
+>> validationexample -vgt -vgs
+-vgsname     -vgsnone     -vgssize     -vgstime     -vgsversion  -vgsyes no
+>> validationexample -vgt -vgs
+-vgsname     -vgsnone     -vgssize     -vgstime     -vgsversion  -vgsyes no
+>> validationexample -vgt -vgs
+EOF
+
+type_command 'v'
+tab
+assert_terminal_contents <<'EOF'
+>> validationexample -vgt -vgs
+-vgsname     -vgsnone     -vgssize     -vgstime     -vgsversion  -vgsyes no
+>> validationexample -vgt -vgs
+-vgsname     -vgsnone     -vgssize     -vgstime     -vgsversion  -vgsyes no
+>> validationexample -vgt -vgsversion 
+EOF
+
+reset_terminal
+type_command 'validationexample '
+tabtab
+assert_terminal_contents <<'EOF'
+>> validationexample 
+sub-dir/    video1.mp4  
+>> validationexample 
+EOF
+
+type_command 'su'
+tab
+assert_terminal_contents <<'EOF'
+>> validationexample 
+sub-dir/    video1.mp4  
+>> validationexample sub-dir/
+EOF
+
+tabtab
+assert_terminal_contents <<'EOF'
+>> validationexample 
+sub-dir/    video1.mp4  
+>> validationexample sub-dir/data.mp4 
+EOF
+
+tabtab
+assert_terminal_contents <<'EOF'
+>> validationexample 
+sub-dir/    video1.mp4  
+>> validationexample sub-dir/data.mp4 
+data1.bin     data.png      sub-dir/      textual.txt   
+data1.txt     data.txt      text.txt      video1.avi    
+data.jpg      image.jpg     textual1.txt  video1.mp4    
+>> validationexample sub-dir/data.mp4 
+data1.bin     data.png      sub-dir/      textual.txt   
+data1.txt     data.txt      text.txt      video1.avi    
+data.jpg      image.jpg     textual1.txt  video1.mp4    
+>> validationexample sub-dir/data.mp4 
+EOF
+
+type_command 'da'
+tabtab
+assert_terminal_contents <<'EOF'
+>> validationexample 
+sub-dir/    video1.mp4  
+>> validationexample sub-dir/data.mp4 
+data1.bin     data.png      sub-dir/      textual.txt   
+data1.txt     data.txt      text.txt      video1.avi    
+data.jpg      image.jpg     textual1.txt  video1.mp4    
+>> validationexample sub-dir/data.mp4 
+data1.bin     data.png      sub-dir/      textual.txt   
+data1.txt     data.txt      text.txt      video1.avi    
+data.jpg      image.jpg     textual1.txt  video1.mp4    
+>> validationexample sub-dir/data.mp4 data
+EOF
+
+tabtab
+assert_terminal_contents <<'EOF'
+>> validationexample 
+sub-dir/    video1.mp4  
+>> validationexample sub-dir/data.mp4 
+data1.bin     data.png      sub-dir/      textual.txt   
+data1.txt     data.txt      text.txt      video1.avi    
+data.jpg      image.jpg     textual1.txt  video1.mp4    
+>> validationexample sub-dir/data.mp4 
+data1.bin     data.png      sub-dir/      textual.txt   
+data1.txt     data.txt      text.txt      video1.avi    
+data.jpg      image.jpg     textual1.txt  video1.mp4    
+>> validationexample sub-dir/data.mp4 data
+data1.bin  data1.txt  data.jpg   data.png   data.txt   
+>> validationexample sub-dir/data.mp4 data
+data1.bin  data1.txt  data.jpg   data.png   data.txt   
+>> validationexample sub-dir/data.mp4 data
+EOF
+
+type_command '.j'
+tab
+assert_terminal_contents <<'EOF'
+>> validationexample 
+sub-dir/    video1.mp4  
+>> validationexample sub-dir/data.mp4 
+data1.bin     data.png      sub-dir/      textual.txt   
+data1.txt     data.txt      text.txt      video1.avi    
+data.jpg      image.jpg     textual1.txt  video1.mp4    
+>> validationexample sub-dir/data.mp4 
+data1.bin     data.png      sub-dir/      textual.txt   
+data1.txt     data.txt      text.txt      video1.avi    
+data.jpg      image.jpg     textual1.txt  video1.mp4    
+>> validationexample sub-dir/data.mp4 data
+data1.bin  data1.txt  data.jpg   data.png   data.txt   
+>> validationexample sub-dir/data.mp4 data
+data1.bin  data1.txt  data.jpg   data.png   data.txt   
+>> validationexample sub-dir/data.mp4 data.jpg 
+EOF
+
+tabtab
+assert_terminal_contents <<'EOF'
+>> validationexample 
+sub-dir/    video1.mp4  
+>> validationexample sub-dir/data.mp4 
+data1.bin     data.png      sub-dir/      textual.txt   
+data1.txt     data.txt      text.txt      video1.avi    
+data.jpg      image.jpg     textual1.txt  video1.mp4    
+>> validationexample sub-dir/data.mp4 
+data1.bin     data.png      sub-dir/      textual.txt   
+data1.txt     data.txt      text.txt      video1.avi    
+data.jpg      image.jpg     textual1.txt  video1.mp4    
+>> validationexample sub-dir/data.mp4 data
+data1.bin  data1.txt  data.jpg   data.png   data.txt   
+>> validationexample sub-dir/data.mp4 data
+data1.bin  data1.txt  data.jpg   data.png   data.txt   
+>> validationexample sub-dir/data.mp4 data.jpg t
+EOF
+
+tabtab
+assert_terminal_contents <<'EOF'
+>> validationexample 
+sub-dir/    video1.mp4  
+>> validationexample sub-dir/data.mp4 
+data1.bin     data.png      sub-dir/      textual.txt   
+data1.txt     data.txt      text.txt      video1.avi    
+data.jpg      image.jpg     textual1.txt  video1.mp4    
+>> validationexample sub-dir/data.mp4 
+data1.bin     data.png      sub-dir/      textual.txt   
+data1.txt     data.txt      text.txt      video1.avi    
+data.jpg      image.jpg     textual1.txt  video1.mp4    
+>> validationexample sub-dir/data.mp4 data
+data1.bin  data1.txt  data.jpg   data.png   data.txt   
+>> validationexample sub-dir/data.mp4 data
+data1.bin  data1.txt  data.jpg   data.png   data.txt   
+>> validationexample sub-dir/data.mp4 data.jpg t
+table   tablet  task    turd    
+>> validationexample sub-dir/data.mp4 data.jpg t
+table   tablet  task    turd    
+>> validationexample sub-dir/data.mp4 data.jpg t
+EOF
+
+type_command 'u'
+tab
+assert_terminal_contents <<'EOF'
+>> validationexample 
+sub-dir/    video1.mp4  
+>> validationexample sub-dir/data.mp4 
+data1.bin     data.png      sub-dir/      textual.txt   
+data1.txt     data.txt      text.txt      video1.avi    
+data.jpg      image.jpg     textual1.txt  video1.mp4    
+>> validationexample sub-dir/data.mp4 
+data1.bin     data.png      sub-dir/      textual.txt   
+data1.txt     data.txt      text.txt      video1.avi    
+data.jpg      image.jpg     textual1.txt  video1.mp4    
+>> validationexample sub-dir/data.mp4 data
+data1.bin  data1.txt  data.jpg   data.png   data.txt   
+>> validationexample sub-dir/data.mp4 data
+data1.bin  data1.txt  data.jpg   data.png   data.txt   
+>> validationexample sub-dir/data.mp4 data.jpg t
+table   tablet  task    turd    
+>> validationexample sub-dir/data.mp4 data.jpg t
+table   tablet  task    turd    
+>> validationexample sub-dir/data.mp4 data.jpg turd 
+EOF
+
+tabtab
+assert_terminal_contents <<'EOF'
+>> validationexample 
+sub-dir/    video1.mp4  
+>> validationexample sub-dir/data.mp4 
+data1.bin     data.png      sub-dir/      textual.txt   
+data1.txt     data.txt      text.txt      video1.avi    
+data.jpg      image.jpg     textual1.txt  video1.mp4    
+>> validationexample sub-dir/data.mp4 
+data1.bin     data.png      sub-dir/      textual.txt   
+data1.txt     data.txt      text.txt      video1.avi    
+data.jpg      image.jpg     textual1.txt  video1.mp4    
+>> validationexample sub-dir/data.mp4 data
+data1.bin  data1.txt  data.jpg   data.png   data.txt   
+>> validationexample sub-dir/data.mp4 data
+data1.bin  data1.txt  data.jpg   data.png   data.txt   
+>> validationexample sub-dir/data.mp4 data.jpg t
+table   tablet  task    turd    
+>> validationexample sub-dir/data.mp4 data.jpg t
+table   tablet  task    turd    
+>> validationexample sub-dir/data.mp4 data.jpg turd t
+EOF
+
+type_command 'a'
+tabtab
+assert_terminal_contents <<'EOF'
+>> validationexample 
+sub-dir/    video1.mp4  
+>> validationexample sub-dir/data.mp4 
+data1.bin     data.png      sub-dir/      textual.txt   
+data1.txt     data.txt      text.txt      video1.avi    
+data.jpg      image.jpg     textual1.txt  video1.mp4    
+>> validationexample sub-dir/data.mp4 
+data1.bin     data.png      sub-dir/      textual.txt   
+data1.txt     data.txt      text.txt      video1.avi    
+data.jpg      image.jpg     textual1.txt  video1.mp4    
+>> validationexample sub-dir/data.mp4 data
+data1.bin  data1.txt  data.jpg   data.png   data.txt   
+>> validationexample sub-dir/data.mp4 data
+data1.bin  data1.txt  data.jpg   data.png   data.txt   
+>> validationexample sub-dir/data.mp4 data.jpg t
+table   tablet  task    turd    
+>> validationexample sub-dir/data.mp4 data.jpg t
+table   tablet  task    turd    
+>> validationexample sub-dir/data.mp4 data.jpg turd ta
+table   tablet  task    
+>> validationexample sub-dir/data.mp4 data.jpg turd ta
+EOF
+
+type_command 'bl'
+tab
+assert_terminal_contents <<'EOF'
+>> validationexample 
+sub-dir/    video1.mp4  
+>> validationexample sub-dir/data.mp4 
+data1.bin     data.png      sub-dir/      textual.txt   
+data1.txt     data.txt      text.txt      video1.avi    
+data.jpg      image.jpg     textual1.txt  video1.mp4    
+>> validationexample sub-dir/data.mp4 
+data1.bin     data.png      sub-dir/      textual.txt   
+data1.txt     data.txt      text.txt      video1.avi    
+data.jpg      image.jpg     textual1.txt  video1.mp4    
+>> validationexample sub-dir/data.mp4 data
+data1.bin  data1.txt  data.jpg   data.png   data.txt   
+>> validationexample sub-dir/data.mp4 data
+data1.bin  data1.txt  data.jpg   data.png   data.txt   
+>> validationexample sub-dir/data.mp4 data.jpg t
+table   tablet  task    turd    
+>> validationexample sub-dir/data.mp4 data.jpg t
+table   tablet  task    turd    
+>> validationexample sub-dir/data.mp4 data.jpg turd ta
+table   tablet  task    
+>> validationexample sub-dir/data.mp4 data.jpg turd table
+EOF
+
+tabtab
+assert_terminal_contents <<'EOF'
+>> validationexample 
+sub-dir/    video1.mp4  
+>> validationexample sub-dir/data.mp4 
+data1.bin     data.png      sub-dir/      textual.txt   
+data1.txt     data.txt      text.txt      video1.avi    
+data.jpg      image.jpg     textual1.txt  video1.mp4    
+>> validationexample sub-dir/data.mp4 
+data1.bin     data.png      sub-dir/      textual.txt   
+data1.txt     data.txt      text.txt      video1.avi    
+data.jpg      image.jpg     textual1.txt  video1.mp4    
+>> validationexample sub-dir/data.mp4 data
+data1.bin  data1.txt  data.jpg   data.png   data.txt   
+>> validationexample sub-dir/data.mp4 data
+data1.bin  data1.txt  data.jpg   data.png   data.txt   
+>> validationexample sub-dir/data.mp4 data.jpg t
+table   tablet  task    turd    
+>> validationexample sub-dir/data.mp4 data.jpg t
+table   tablet  task    turd    
+>> validationexample sub-dir/data.mp4 data.jpg turd ta
+table   tablet  task    
+>> validationexample sub-dir/data.mp4 data.jpg turd table
+table   tablet  
+>> validationexample sub-dir/data.mp4 data.jpg turd table
+EOF
+
+type_command 't'
+tab
+assert_terminal_contents <<'EOF'
+>> validationexample 
+sub-dir/    video1.mp4  
+>> validationexample sub-dir/data.mp4 
+data1.bin     data.png      sub-dir/      textual.txt   
+data1.txt     data.txt      text.txt      video1.avi    
+data.jpg      image.jpg     textual1.txt  video1.mp4    
+>> validationexample sub-dir/data.mp4 
+data1.bin     data.png      sub-dir/      textual.txt   
+data1.txt     data.txt      text.txt      video1.avi    
+data.jpg      image.jpg     textual1.txt  video1.mp4    
+>> validationexample sub-dir/data.mp4 data
+data1.bin  data1.txt  data.jpg   data.png   data.txt   
+>> validationexample sub-dir/data.mp4 data
+data1.bin  data1.txt  data.jpg   data.png   data.txt   
+>> validationexample sub-dir/data.mp4 data.jpg t
+table   tablet  task    turd    
+>> validationexample sub-dir/data.mp4 data.jpg t
+table   tablet  task    turd    
+>> validationexample sub-dir/data.mp4 data.jpg turd ta
+table   tablet  task    
+>> validationexample sub-dir/data.mp4 data.jpg turd table
+table   tablet  
+>> validationexample sub-dir/data.mp4 data.jpg turd tablet 
+EOF
+
+reset_terminal

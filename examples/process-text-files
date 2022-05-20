@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+sa_short_description=""
+sa_long_description=()
+sa_default_tokens=()
+
+# -------------------------------- simpleargs --------------------------------
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+sa_parse "$0" "<input file>..." @@grep '\.txt$' @varname=inputs
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------
+
+echo "Input files:"
+for input in "${inputs[@]}"
+do
+    echo "- ${input}"
+done

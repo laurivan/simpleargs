@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+capitalized() {
+    if [ "$#" -ne 1 ]
+    then
+        echo "${FUNCNAME}: incorrect number ($#) of parameters (should be 1)" >&2
+        return "${SA_INCORRECT_USE}"
+    fi
+    local value="$1"
+    grep -q -e "^[A-Z]" <<< "${value}"
+}
+
+# -------------------------------- simpleargs --------------------------------
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+sa_parse "$0" \
+         --capitalized arg @@capitalized \
+         --non-capitalized arg '@@!capitalized'
+
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------
+echo "    Capitalized: ${capitalized}"
+echo "Non-capitalized: ${non_capitalized}"

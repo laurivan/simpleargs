@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+# -------------------------------- simpleargs --------------------------------
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+sa_parse "$0" -u -p part "<in1>" "<in2>" @@egrep "[a-z]+"
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------
+
+log_vars INFO u part in1 in2
+
+for i in "${@}"
+do
+    echo " - ${i}"
+done

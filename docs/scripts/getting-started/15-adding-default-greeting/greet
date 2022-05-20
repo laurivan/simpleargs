@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+# -------------------------------- simpleargs --------------------------------
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+sa_parse "$0" --greeting arg @default="Hello" "<person>"
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------
+echo "${greeting}, ${person}!"

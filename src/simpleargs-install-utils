@@ -1,0 +1,243 @@
+#!/usr/bin/env bash
+
+sa-install-local() {
+    sa_install_precheck "${FUNCNAME}" "$@" || return
+    sa_internal_install local install "$@"
+}
+
+sa-uninstall-local() {
+    sa_install_precheck "${FUNCNAME}" "$@" || return
+    sa_internal_install local uninstall "$@"
+}
+
+sa-install-global() {
+    sa_install_precheck "${FUNCNAME}" "$@" || return
+    sa_internal_install global install "$@"
+}
+
+sa-uninstall-global() {
+    sa_install_precheck "${FUNCNAME}" "$@" || return
+    sa_internal_install global uninstall "$@"
+}
+
+sa_install_precheck() {
+    local caller_function_name="$1"
+    local usage="Usage: ${caller_function_name} <simpleargs-bundle>"
+    local bundle="$2"
+
+    if [ $# -ne 2 ]
+    then
+        # The caller function (e.g. sa-install-local) should be called with 1 argument
+        echo "ERROR: Incorrect number or arguments" >&2
+        echo "${usage}" >&2
+        return 1;
+    fi
+
+    if [ -z "${bundle}" ]
+    then
+        echo "ERROR: No bundle file provided" >&2
+        echo "${usage}" >&2
+        return 1;
+    elif [ ! -f "${bundle}" ]
+    then
+        echo "ERROR: No such bundle file: '${bundle}'" >&2
+        echo "${usage}" >&2
+        return 1;
+    elif ! grep --silent "^sa-install-global()" "${bundle}"
+    then
+        echo "ERROR: The provided file seems not to be simpleargs bundle: '${bundle}'" >&2
+        echo "${usage}" >&2
+        return 1
+    else
+        return 0
+    fi
+}
+
+sa_internal_install() {
+    local scope="$1" # "global" or "local"
+    local action="$2" # "install" or "uninstall"
+    local bundle="$3"
+    if [ "${scope}" = "global" ]
+    then
+        if [ "${EUID}" -ne 0 ]
+        then
+            echo "ERROR: You must be root to install globally" >&2
+            return 1
+        fi
+        local install_dir=/usr/lib/simpleargs
+        local bootstrap_file=/etc/bash.bashrc
+    elif [ "${scope}" = "local" ]
+    then
+        local install_dir="${HOME}"/.simpleargs.d
+        local bootstrap_file="${HOME}"/.bashrc
+    else
+        echo "ERROR: unknown scope: '${scope}'" >&2
+        return 1
+    fi
+
+    if [ "${action}" = "install" ]
+    then
+        sa_execute_install "${scope}" \
+                           "${bundle}" \
+                           "${install_dir}" \
+                           "${bootstrap_file}"
+    elif [ "${action}" = "uninstall" ]
+    then
+        sa_execute_uninstall "${scope}" \
+                             "${bundle}" \
+                             "${install_dir}" \
+                             "${bootstrap_file}"
+    else
+        echo "ERROR: unknown action: '${action}'" >&2
+        return 1
+    fi
+}
+
+sa_execute_uninstall() {
+    echo "Uninstalling simpleargs..."
+    local install_type="$1" # "global" or "local"
+    local bundle="$2"
+    local install_dir="$3"
+    local bootstrap_file="$4"
+
+    echo "Deleting installation directory: '${install_dir}'"
+    rm -r "${install_dir}" ||
+        { echo "ERROR: cannot delete install directory: '${install_dir}'"; return 1; }
+
+    echo "Removing bootstrap code from '${bootstrap_file}'"
+    local bootstrap_start_token="# simpleargs start #"
+    local bootstrap_end_token="# simpleargs end #"
+    sed -i "/${bootstrap_start_token}/,/${bootstrap_end_token}/ d" "${bootstrap_file}" ||
+        { echo "ERROR: cannot remove bootstrap code from '${bootstrap_file}'"; return 1; }
+}
+
+sa_execute_install() {
+    echo "Installing simpleargs..."
+    local install_type="$1" # "global" or "local"
+    local bundle="$2"
+    local install_dir="$3"
+    local bootstrap_file="$4"
+
+    local bundle_destination="${install_dir}"/simpleargs-bundle
+    local rc_destination="${install_dir}"/simpleargs.rc
+    local completion_lib_destination="${install_dir}"/simpleargs-completion
+    local config_destination="${install_dir}"/simpleargs.conf
+
+    if [ -d "${install_dir}" ]
+    then
+        echo "Installation directory already exists: '${install_dir}'"
+        echo "Overwriting library (does not affect possible existing cache files)"
+    else
+        mkdir "${install_dir}" || { echo "ERROR: cannot create directory: '${install_dir}'" >&2; return 1; }
+    fi
+
+    # Bundle
+    cp "${bundle}" "${bundle_destination}" ||
+        { echo "ERROR: cannot install '${bundle_destination}'" >&2; return 1; }
+    chmod 644 "${bundle_destination}" ||
+        { echo "ERROR: cannot set permissions: '${bundle_destination}'" >&2; return 1; }
+
+    # RC file
+    sa-generate-rc > "${rc_destination}" ||
+        { echo "ERROR: cannot create rc file: '${rc_destination}'" >&2; return 1; }
+    chmod 644 "${rc_destination}" ||
+        { echo "ERROR: cannot set permissions: '${rc_destination}'" >&2; return 1; }
+
+    # Completion library
+    sa-generate-completion-runtime > "${completion_lib_destination}" ||
+        { echo "ERROR: cannot create completion lib: '${completion_lib_destination}'" >&2; return 1; }
+    chmod 644 "${completion_lib_destination}" ||
+        { echo "ERROR: cannot set permissions: '${completion_lib_destination}'" >&2; return 1; }
+
+    # Configuration file
+    echo "### ${install_type^} configuration file for simpleargs ###" > "${config_destination}"
+    cat >> "${config_destination}" <<'EOF'
+#
+# The precedence of the configuration sources. Sources higher in the list
+# take precedence.
+# 1. Environment variables given on script invocation. For example,
+#      > log_level=FINER myscript --user john
+# 2. Variables assigned in (individual) scripts before sourcing simpleargs:
+#      # Default log level if not given as an environment variable.
+#      : ${log_level:=INFO}
+#      . "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+# 3. User specific configuration in ~/.simpleargs.conf (if exists):
+#      # Default log level for simpleargs scripts if not already specified.
+#      : ${log_level:=WARN}
+# 4. Global configuration in /etc/simpleargs.conf (if exists):
+#      # Default (global) log level if not overridden by user configuration,
+#      # the script itself or an environment variable.
+#      : ${log_level:=ERROR}
+# 5. Default values in simpleargs bundle: used if not defined in
+#    any of the above sources.
+#
+# Note the syntax:
+#   : ${sa_use_cache:=true}
+# will set variable 'sa_use_cache' to 'true' only if it was unset before.
+# This enables the precedence mechanism described above: the definition in
+# sources that are lower on the list take effect only if the variable has not
+# been configured by the higher precedence source. However, using
+#   sa_use_cache=true
+# in e.g. the global configuration will set the value to 'true' unconditionally.
+# That is, trying to change the value using an environment variable or variable
+# assignment in the script will have no effect since the global settings is
+# read further down the chain. This behaviour might or might not be wanted.
+# Usually it is good practice to only provide some global default configuration
+# and let the script writer (or user) override the values.
+
+# Disable script definition cache
+# : ${sa_use_cache:=false}
+EOF
+
+    local bootstrap_start_token="# simpleargs start #"
+    local bootstrap_end_token="# simpleargs end #"
+
+    local bootstrap_tmp_file=/tmp/simpleargs-bootstrap-tmp
+    cat > "${bootstrap_tmp_file}" <<EOF
+${bootstrap_start_token}
+# $(date)
+export SIMPLEARGS_DIR="${install_dir}"
+export SIMPLEARGS="\${SIMPLEARGS_DIR}/simpleargs-bundle"
+. "\${SIMPLEARGS_DIR}/simpleargs.rc"
+${bootstrap_end_token}
+EOF
+    [ $? -eq 0 ] || { echo "ERROR: cannot create temporary bootstrap file: '${bootstrap_tmp_file}'"; return 1; }
+
+    if grep --silent "^${bootstrap_start_token}$" "${bootstrap_file}"
+    then
+        # TODO: should the old bootstrap code be removed?
+        echo "Bootstrap code already exist in '${bootstrap_file}'"
+    else
+        # Append a newline to the file if it is missing
+        if [ -s "${bootstrap_file}" ] && [ -n "$(tail -c 1 "${bootstrap_file}")" ]
+        then
+            echo >> "${bootstrap_file}"
+        fi
+
+        cat "${bootstrap_tmp_file}" >> "${bootstrap_file}"
+        [ $? -eq 0 ] || { echo "ERROR: cannot insert bootstrap code into '${bootstrap_file}'"; return 1; }
+    fi
+
+    echo "Installation complete"
+    echo "       User home directory: ${HOME}"
+    echo "                    Bundle: ${bundle_destination}"
+    echo "Utility functions + config: ${rc_destination}"
+    echo "        Completion library: ${completion_lib_destination}"
+    echo "        Configuration file: ${config_destination}"
+    echo "     Bootstrap appended to: ${bootstrap_file}"
+
+    . "${bootstrap_tmp_file}" || { echo "ERROR: error when sourcing temporary bootstrap file: '${bootstrap_tmp_file}'"; return 1; }
+    rm "${bootstrap_tmp_file}" || { echo: "ERROR: cannot delete temporary bootstrap file: '${bootstrap_tmp_file}'"; return 1; }
+}
+
+sa-generate-rc() {
+    cat <<'SA_GENERATE_RC_EOF'
+# sa-generate-rc file placeholder # This line is replaced during the build with the default rc file contents
+SA_GENERATE_RC_EOF
+}
+
+sa-generate-completion-runtime() {
+    cat <<'SA_GENERATE_COMPLETION_RUNTIME_EOF'
+# sa-generate-completion-runtime file placeholder # This line is replaced during the build with the default rc file contents
+SA_GENERATE_COMPLETION_RUNTIME_EOF
+}

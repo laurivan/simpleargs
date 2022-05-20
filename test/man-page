@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+
+gen-animals() {
+    cat <<EOF
+dog
+cat
+horse
+sheep
+EOF
+}
+
+sa_script_version=2.1
+sa_short_description="short description of this test script"
+sa_long_description=("This is the first paragraph.@endshortdoc@ Some more text."
+                     "This is the second one.")
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" -g @doc="Group of the user" \
+             -u/--user arg @default=root \
+             @doc="User to use for the execution" @doc="Second doc paragraph" \
+             --secondary-user arg @default='${USER}' \
+             @doc="Secondary user. Default: @{d}." \
+             -k \
+             --dogs arg @multivalue: \
+             -p/--pattern arg @multivalue \
+             @doc="Patterns can be added using this option (use multiple times to get more than one pattern." \
+             @doc="This is the second paragraph for pattern option." \
+             @doc="There might even be a third paragraph. It could contain more and more information about the option. Note that if there are no valid values defined this placeholder -->@{v}<-- is simply removed." \
+             --level low,medium,high@default \
+             @doc="Level to be used. Possible values: @{v} (default: @{d})." \
+             --color arg @validvaluesfile="${sa_test_dir}/colors.txt" @default=red \
+             @doc="Color to use. Options: @{v} (default: @{d})." \
+             --animal arg @validvaluescommand=gen-animals @default=cat \
+             @doc="Your favorite animal. Options: @{v} (default: @{d})." \
+             "<file>" @doc="Input file." @doc="Second paragraph of param documentation."
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_create_man_page() {
+    # temp.txt
+    #before [ -f ~/.simpleargs.d/bin/man/man1/${test_file_basename}.1.gz ] && rm ~/.simpleargs.d/bin/man/man1/${test_file_basename}.1.gz
+    #before printf "red\nyellow\ngreen\n" > ${sa_test_dir}/colors.txt
+    value 0 source_result parse_result process_result
+    value false g
+    value temp.txt file
+
+    # See https://unix.stackexchange.com/questions/15855/how-to-dump-a-man-page
+    MANPATH=~/.simpleargs.d/bin/man MANWIDTH=80 man man-page | col -bx > ${sa_test_dir}/man-page.txt
+
+    cat > ${sa_test_dir}/expected-man-page.txt - <<'EOF'
+MAN-PAGE(1)                      User Scripts                      MAN-PAGE(1)
+
+
+
+NAME
+       man-page - short description of this test script
+
+SYNOPSIS
+       man-page [OPTION]... <file>
+
+DESCRIPTION
+       This is the first paragraph. Some more text.
+
+       This is the second one.
+
+OPTIONS
+       -h, --help
+              Print usage instructions and exit.
+
+
+       -g     Group of the user
+
+
+       -u ARG, --user ARG
+              User to use for the execution
+
+              Second doc paragraph
+
+
+       --secondary-user ARG
+              Secondary user. Default: ${USER}.
+
+
+       -k
+
+       --dogs ARG1:ARG2:...
+
+
+       -p ARG, --pattern ARG
+              Patterns  can  be added using this option (use multiple times to
+              get more than one pattern.
+
+              This is the second paragraph for pattern option.
+
+              There might even be a third paragraph. It could contain more and
+              more  information  about  the  option. Note that if there are no
+              valid values defined this placeholder --><-- is simply  removed.
+
+
+       --level ARG
+              Level  to  be used. Possible values: 'low', 'medium', and 'high'
+              (default: high).
+
+
+       --color ARG
+              Color to use. Options: 'red', 'yellow',  and  'green'  (default:
+              red).
+
+
+       --animal ARG
+              Your  favorite  animal.  Options:  'dog',  'cat',  'horse',  and
+              'sheep' (default: cat).
+
+
+
+
+man-page 2.1                                                       MAN-PAGE(1)
+EOF
+    diff ${sa_test_dir}/expected-man-page.txt ${sa_test_dir}/man-page.txt
+}
+
+test_man_page_up_to_date() {
+    # temp.txt
+    #resetcache
+    #before printf "red\nyellow\ngreen\n" > ${sa_test_dir}/colors.txt
+    value 0 source_result parse_result process_result
+    value false g
+    value temp.txt file
+}

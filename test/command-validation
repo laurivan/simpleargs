@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+
+language() {
+    [ "$1" = "english" ] ||
+        [ "$1" = "german" ] ||
+        [ "$1" = "french" ] ||
+        [ "$1" = "finnish" ] ||
+        [ "$1" = "japanese" ] ||
+        [ "$1" = "chinese" ]
+}
+
+file_starts_with() {
+    [ $# -eq 2 ] || { echo "Usage: starts_with <prefix> <file name>" >&2; return 1; }
+    local prefix="$1"
+    local file_name="$2"
+    local file_basename="$(basename "${file_name}")"
+    [[ "${file_basename}" = "${prefix}"* ]]
+}
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" \
+             -c/--count arg @@int \
+             --dice arg @@int 1..6 \
+             -l/--language arg @@language \
+             --not-language arg @@!language \
+             --not-plain-letters arg @@!egrep '^[a-z]+$' \
+             "[<file>]" @@"file_starts_with abc,dir"
+
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_command_negation_1() {
+    # --not-language japanese
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_command_negation_2() {
+    # --not-language elephant
+    value 0 source_result parse_result process_result
+    value elephant not_language
+}
+
+test_regexp_negation_1() {
+    # --not-plain-letters rewfds
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_regexp_negation_2() {
+    # --not-plain-letters rewf3ds
+    value 0 source_result parse_result process_result
+    value rewf3ds not_plain_letters
+}
+
+test_sa_validation_with_no_arguments_1() {
+    # -c 14
+    value 0 source_result parse_result process_result
+    value 14 c count
+    empty dice
+    empty l language
+    empty file
+    [ $# -eq 0 ]
+}
+
+test_sa_validation_with_no_arguments_2() {
+    # -c -88
+    value 0 source_result parse_result process_result
+    value -88 c count
+    empty dice
+    empty l language
+    empty file
+    [ $# -eq 0 ]
+}
+
+test_sa_validation_with_no_arguments_fail() {
+    # -c 14foo
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_sa_validation_with_arguments_1() {
+    # --dice 6
+    value 0 source_result parse_result process_result
+    value 6 dice
+}
+
+test_sa_validation_with_arguments_2() {
+    # --dice 1
+    value 0 source_result parse_result process_result
+    value 1 dice
+}
+
+test_sa_validation_with_arguments_3() {
+    # --dice 2
+    value 0 source_result parse_result process_result
+    value 2 dice
+}
+
+test_sa_validation_with_arguments_fail_1() {
+    # --dice 0
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_sa_validation_with_arguments_fail_2() {
+    # --dice 7
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_sa_validation_with_arguments_fail_3() {
+    # --dice -1
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_custom_validation_with_no_arguments() {
+    # -l chinese
+    value 0 source_result parse_result process_result
+}
+
+test_custom_validation_with_no_arguments_fail() {
+    # -l elephant
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_custom_validation_with_arguments() {
+    # /tmp/abc_dir
+    #before mkdir -p /tmp/abc_dir
+    #after rmdir /tmp/abc_dir
+    value 0 source_result parse_result process_result
+    value /tmp/abc_dir file
+}
+
+test_custom_validation_with_arguments_fail_1() {
+    # /tmp/abc-non-existing-tmp-dir
+    #clearcache
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_custom_validation_with_arguments_fail_2() {
+    # /tmp/dir-that-does-not-start-with-abc
+    #before mkdir -p /tmp/dir-that-does-not-start-with-abc
+    #after rmdir /tmp/dir-that-does-not-start-with-abc
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}

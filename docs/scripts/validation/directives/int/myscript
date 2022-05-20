@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+# -------------------------------- simpleargs --------------------------------
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+sa_parse "$0" \
+         --int arg @@int @multivalue, \
+         --non-negative-int arg @@int 0.. @multivalue, \
+         --int-under-ten arg @@int ..9 @multivalue, \
+         --positive-int-under-ten arg @@int 1..9 @multivalue, \
+         --percent-value arg @@int 0..100 @multivalue, \
+         --negative-two-digit arg "@@int -99..-10" @multivalue,
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------

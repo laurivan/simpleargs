@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+
+sa_script_version=1.0
+sa_script_build=1
+sa_short_description="print script cached definitions"
+sa_long_description=(
+    "Print the cached option and parameter definitions for a simpleargs based script."
+    "The script can be used for debugging: After parsing the argument definitions of a script the data structures created by simpleargs can be examined one by one or all at once."
+)
+
+tmp_completion_variables=/tmp/.sa-cache-medata-variables-$(basename "$0")
+
+# -------------------------------- simpleargs --------------------------------
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+
+sa_parse "$0" \
+         --raw @doc="Print the cache file as it is without formatting it neatly." \
+         --no-parse @doc="Do not run the script if the information is not already in the cache." \
+         @doc="If the script is not in the cache it is run by default with 'sa_parse_only=true' to generate the definitions. Use this option to disable this behaviour." \
+         -o/--output @default=- @@!exists \
+         @doc="Store output into file instead of printing to stdout." \
+         "<script>" @validvaluescommand='ls -1 ${HOME}/.simpleargs.d/cached' @@glob "*" \
+         @doc="The script whose information to print." \
+         "[<var>]..." @varname=vars @@egrep "^[-a-zA-Z0-9_]+$" \
+         @validvaluescommand="[ -f ${tmp_completion_variables} ] && cat ${tmp_completion_variables}" \
+         @doc="Print only the specified variables." \
+         @doc="You can use auto completion with this parameter after you've ran the command once. This generates the list of metadata variables and stores it in a temporary file. The temporary file is used for completing the variable names."
+
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------
+
+log_level=INFO
+
+cache_file="${HOME}/.simpleargs.d/cached/${script}"
+if ! [ -f "${cache_file}" ]
+then
+    log WARN "Data not in cache: '${cache_file}'"
+    if ${no_parse}
+    then
+        log WARN "--no-parse used: not trying to generate data"
+        exit 1
+    else
+        log INFO "Trying to generate data"
+        if sa_parse_only=true ${script} >/dev/null
+        then
+            if [ -f "${cache_file}" ]
+            then
+                log INFO "  data generated"
+            else
+                log INFO "  data generation failed"
+                exit 1
+            fi
+        else
+            log ERROR "Could not run script '${script}'"
+            exit 1
+        fi
+    fi
+fi
+
+# Generate list of variables to be used by autocompletion
+cat "${cache_file}" | grep "^declare " | sed -r 's|^declare.* (sa_[a-zA-Z_0-9-]+)=.*|\1|' > "${tmp_completion_variables}"
+
+exit_status=0
+tmp_output=/tmp/.sa-cache-metadata-$$
+tmp_filtered_output=/tmp/.sa-cache-metadata-filtered-$$
+tmp_snippet=/tmp/.sa-cache-metadata-snippet-$$
+
+if ${raw}
+then
+    cat "${cache_file}" > "${tmp_output}"
+else
+    sed -r "/declare.*-[aA] .*[a-zA-Z_0-9]+=\(/ s|(\[[-a-zA-Z0-9_]+\]=\")|\n  \1|g" "${cache_file}" > "${tmp_output}"
+fi
+
+if [ ${#vars[*]} -gt 0 ]
+then
+    > "${tmp_filtered_output}"
+    for var in "${vars[@]}"
+    do
+        sed -r -n "/^declare .*${var}=/,/(^$)|(^declare )|(^#)/ p" "${tmp_output}" | head --lines=-1 > "${tmp_snippet}"
+        [ $(cat "${tmp_snippet}" | wc -l) -gt 0 ] || { echo "ERROR: not found: '${var}'" >&2; exit_status=2; }
+        cat "${tmp_snippet}" >> "${tmp_filtered_output}"
+    done
+else
+    cp "${tmp_output}" "${tmp_filtered_output}"
+fi
+
+# Output
+if [ "${output}" = "-" ]
+then
+    cat "${tmp_filtered_output}"
+else
+    cp "${tmp_filtered_output}" "${output}"
+fi
+
+[ -f "${tmp_output}" ] && rm "${tmp_output}"
+[ -f "${tmp_filtered_output}" ] && rm "${tmp_filtered_output}"
+[ -f "${tmp_snippet}" ] && rm "${tmp_snippet}"
+
+exit "${exit_status}"

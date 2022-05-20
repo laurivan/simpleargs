@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" \
+             --point point @validvalues:=1,1:2,2:4,9 \
+             -n/--name @validvalues=linda,laura,lisa @allowempty \
+             --city @validvalues="Stockholm,London,Amsterdam" \
+             @@egrep '^[A-Z][a-z]+$'
+
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_valid() {
+    # --point 4,9 -n linda
+    value 0 source_result parse_result process_result
+    value 4,9 point
+    value linda n name
+    [ $# -eq 0 ]
+}
+
+test_invalid() {
+    # --name laura --point 4,8
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_invalid_empty() {
+    # --point ""
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_valid_empty() {
+    # -n "" --point 1,1
+    value 0 source_result parse_result process_result
+    value 1,1 point
+    empty n name
+    [ $# -eq 0 ]
+}
+
+test_with_regexp_old_valid_value() {
+    # --city London
+    value 0 source_result parse_result process_result
+    value London city
+    [ $# -eq 0 ]
+}
+
+test_with_regexp_invalid_value() {
+    # --city "new york"
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_with_regexp_new_valid_value() {
+    # --city "Paris"
+    value 0 source_result parse_result process_result
+    value Paris city
+    [ $# -eq 0 ]
+}
+
+test_invalid_name_error_printout() {
+    # --name lorelai
+    #before export log_indent_enabled=false log_display_level=false
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+    diff "${sa_test_stdout}" - <<EOF
+-n/--name: invalid value 'lorelai'
+Valid values are: 'linda', 'laura' and 'lisa'.
+EOF
+}
+
+test_invalid_name_error_printout_max_values() {
+    # --name lorelai
+    #before export log_indent_enabled=false log_display_level=false
+    #before export sa_print_max_valid_values=2
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+    diff "${sa_test_stdout}" - <<EOF
+-n/--name: invalid value 'lorelai'
+Valid values are: 'linda', 'laura',...
+EOF
+}
+
+test_invalid_name_error_printout_max_values_length() {
+    # --name lorelai
+    #before export log_indent_enabled=false log_display_level=false
+    #before export sa_print_max_valid_values_length=7 sa_print_max_valid_values=20
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+    diff "${sa_test_stdout}" - <<EOF
+-n/--name: invalid value 'lorelai'
+Valid values are: 'linda',...
+EOF
+}

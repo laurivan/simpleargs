@@ -1,0 +1,158 @@
+#!/usr/bin/env bash
+
+# Function for printing test framework messages which should not go
+# into stdout nor stderr (so that they don't get mixed up with
+# the actual output of the test cases).
+echo23() {
+    echo "$@" >&23
+}
+
+# Function for programmatically skipping a test case (see test case
+# test_log_to_terminal in log-tests for an example).
+skip() {
+    local msg="${1}"
+    echo23 "Skipping test${msg:+: ${msg}}"
+    exit "${SA_SKIP_TEST_EXIT_CODE}"
+}
+
+# https://unix.stackexchange.com/questions/39623/trap-err-and-echoing-the-error-line
+# http://phaq.phunsites.net/2010/11/22/trap-errors-exit-codes-and-line-numbers-within-a-bash-script/
+#
+# This function is set as error trap in the instrumented test case file.
+# For example,
+# test_validation() { trap 'errortrap test_validation ${LINENO} $?' ERR;
+#     # "first param" "second" "this is in-valid@" "valid param"
+#     value 0 source_result parse_result
+#     value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+# }
+#
+# calling trap is placed on the same line as the function definition
+# in order not to mess the line numbering. That is, the line numbers in
+# the original and instrumented file need to match to produce error
+# messages with the correct line number
+errortrap() {
+    # Global 'exit_code' variable is referenced by the instrumented
+    # test file. See 'test-runner' script for how ${instrumented_test_file}
+    # is created.
+    exit_code=1
+
+    # Function arguments
+    script="$0"
+    testcase="$1"
+    lineno="$2"
+    errorcode="$3"
+
+    [ -n "${caller_lineno}" ] && lineno="${caller_lineno}"
+    echo23 "${testcase}: exit code ${errorcode}"
+    echo23 "${lineno}: $(sed -n "${lineno} p" "${script}")"
+
+    # Store the point of failure for quickly navigating to the correct
+    # line of the test file (using 'sa-emacs-failed-test' function).
+    basename "${script}" > /tmp/simpleargs-test-runner/sa-failed-test-file
+    echo "${lineno}" > /tmp/simpleargs-test-runner/sa-failed-test-lineno
+}
+
+# Check that variables have the same value
+# > a=dog; b=dog; c=dog
+# > equals a b c; echo $?
+# 0
+equals() {
+    caller_lineno=$(caller 0 | cut -d" " -f1)
+    [ $# -gt 1 ] || { echo "Usage: ${FUNCNAME} <value> <value> [<value>]..." >&2; return 1; }
+    local value="$1"; shift
+    local other_value
+    for other_value in "$@"
+    do
+        if [ "${value}" != "${other_value}" ]
+        then
+            echo23 "Values are not equal:
+'${value}'
+'${other_value}'"
+            return 1
+        fi
+    done
+    unset caller_lineno
+    return 0
+}
+
+# Check that given variables have a certain value
+# > a=cat; b=cat
+# > value cat a b; echo $?
+# 0
+value() {
+    caller_lineno=$(caller 0 | cut -d" " -f1)
+    local varvalue="$1"; shift
+    local varname
+    for varname in "$@"
+    do
+        if [ "${!varname}" = "${varvalue}" ]
+        then
+            true
+        else
+            # Put expected and actual value on separate lines to improve readability
+            echo23 "Variable '${varname}' does not equal to
+'${varvalue}' but
+'${!varname}'"
+            return 1
+        fi
+    done
+    unset caller_lineno
+    return 0
+}
+
+# Check that variable is empty
+# > unset a; b=""
+# > empty a b; echo $?
+# 0
+empty() {
+    caller_lineno=$(caller 0 | cut -d" " -f1)
+    local varname
+    for varname in "$@"
+    do
+        if [ -z "${!varname}" ]
+        then
+            true
+        else
+            echo23 "Variable '${varname}' is not empty (but '${!varname}')"
+            return 1
+        fi
+    done
+    unset caller_lineno
+    return 0
+}
+
+# Check that array contains the given values
+# > my_array=("value1" "value2")
+# > arrayvalue my_array value1 value2; echo $?
+# 0
+arrayvalue() {
+    caller_lineno=$(caller 0 | cut -d" " -f1)
+    local array_name="$1"
+    declare -n actual_array="${array_name}"
+    shift
+
+    expected_array=( "$@" )
+    if [ "${#actual_array[@]}" -eq "${#expected_array[@]}" ]
+    then
+        local i
+        for i in "${!actual_array[@]}"
+        do
+            [ "${actual_array[$i]}" = "${expected_array[$i]}" ] ||
+                {
+                    echo23 "${array_name}: actual and expected array contents differ (index: '$i')"
+                    echo23 "Expected: '${expected_array[$i]}'"
+                    echo23 "  Actual: '${actual_array[$i]}'"
+                    echo23 "$(declare -p $array_name)"
+                    echo23 "$(declare -p expected_array)"
+                    return 1
+                }
+        done
+        unset caller_lineno
+        return 0
+    else
+        echo23 "${array_name}: actual and expected array size differ (${#actual_array[@]} >< ${#expected_array[@]})"
+        echo23 "$(declare -p $array_name)"
+        echo23 "$(declare -p expected_array)"
+        return 1
+    fi
+}

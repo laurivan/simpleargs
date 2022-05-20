@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+do-some-processing() {
+    true
+}
+
+# -------------------------------- simpleargs --------------------------------
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+sa_parse "$0"
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------
+
+log_level=INFO
+# More advanced logging
+# An explicit newline '\n' is needed
+log INFO "Hello %s!\n" "world"
+# '\t' escape code used to indent the message
+log INFO "\t%s is %d years old.\n" Jeff 52
+
+# Give a dummy argument to force "format string invocation" thus
+# omitting the newline (which is printed by the subsequent echo).
+log INFO "Processing something..." ""
+if log_enabled INFO
+then
+    do-some-processing && echo "DONE" || echo "FAILED"
+fi
+percent=70
+log INFO "%d%% discount!\n" "${percent}"

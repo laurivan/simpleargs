@@ -1,0 +1,317 @@
+#!/usr/bin/env bash
+
+echo_invalid_log_level() {
+    local log_level="$1"
+    echo "No such log level: '${log_level}'"
+    echo "Allowed log levels: OFF, ERROR, WARN, INFO, CONFIG, FINE, FINER, FINEST, ALL)."
+}
+
+sa_previous_log_level=""
+# Invoked before making a decision whether to log a particular event: see function 'log_enabled'.
+refresh_effective_log_level() {
+    if [ "${log_level}" != "${sa_previous_log_level}" ]
+    then
+        if [ "${log_level}" -eq "${log_level}" ] 2>/dev/null
+        then
+            # Numeric log level
+            if [ "${log_level}" -lt 0 ]
+            then
+                echo "Invalid (numeric) log level '${log_level}' used (should be >= 0): ignoring" >&2
+            else
+                [ -z "${original_log_level}" ] && original_log_level="${log_level}"
+                effective_log_level=${log_level}
+                effective_log_level_name=""
+            fi
+        else
+            # Standard log level
+            if [ -n "${_log_levels[${log_level}]}" ]
+            then
+                # Valid standard log level
+                [ -z "${original_log_level}" ] && original_log_level=${_log_levels[${log_level}]}
+                effective_log_level_name=${log_level}
+                effective_log_level=${_log_levels[${log_level}]}
+            else
+                # Invalid (e.g. misstyped) log level
+                echo_invalid_log_level "${log_level}" >&2
+                echo "Setting log level to OFF." >&2
+                effective_log_level_name=OFF
+                effective_log_level=${_log_levels[${effective_log_level_name}]}
+            fi
+        fi
+
+        # Save the previous log level: no need to update the effective log level until log_level is changed
+        sa_previous_log_level="${log_level}"
+    else
+        : # Log level is up to date (no changes made by the user)
+    fi
+}
+
+# Resets the log level to the first valid value that was set for the library.
+reset_log_level() {
+    log_level="${original_log_level}"
+    refresh_effective_log_level
+}
+
+# Decides whether the log level of the message is higher than the (current) effective log level.
+# Note! This function sets the variable '_msg_numeric_level' that can be used by the invoker
+# e.g. for coloring the log message according to the message's log level.
+log_enabled() {
+    # Update effective numeric log level on every invocation to allow "on the fly"changes to log level.
+    refresh_effective_log_level
+
+    local msg_level="$1"
+    if [ "${msg_level}" -eq "${msg_level}" ] 2>/dev/null
+    then
+        # Numeric message log level
+        _msg_numeric_level=${msg_level}
+    else
+        # Standard message log level
+        if [ -n "${_log_levels[${msg_level}]}" ]
+        then
+            _msg_numeric_level=${_log_levels[${msg_level}]}
+        else
+            echo_invalid_log_level "${msg_level}" >&2
+            return 2
+        fi
+    fi
+
+    [ "${_msg_numeric_level}" -ge "${effective_log_level}" ]
+}
+
+log() {
+    local _msg_log_level="$1"; shift
+    log_enabled "${_msg_log_level}" || return 0
+    local __message="$1"; shift
+
+    # '_msg_numeric_level' set by 'log_enabled'
+    if [ "${_msg_numeric_level}" -ge "${_log_levels[ERROR]}" ]
+    then
+        color_escape=${_log_colors[Red]}
+    elif [ "${_msg_numeric_level}" -ge "${_log_levels[WARN]}" ]
+    then
+        color_escape=${_log_colors[Yellow]}
+    elif [ "${_msg_numeric_level}" -ge "${_log_levels[FINE]}" ]
+    then
+        color_escape=${_log_colors[Normal]}
+    else
+        color_escape=${_log_colors[Dark Gray]}
+    fi
+
+    # <date> <log level (6 char)> <indent> <custom format string>
+
+    # Turn on font color (if enabled and output destination is terminal)
+    if ${log_enable_colors} && ${_log_dest_opened_on_terminal}
+    then
+        echo -ne "\e[${color_escape}m" >&${log_dest}
+    fi
+
+    # Print timestamp (if enabled)
+    if [ -n "${log_date_format}" ]
+    then
+        local timestamp="$(date "${log_date_format}")"
+        printf "%s " "${timestamp}" >&${log_dest}
+    fi
+
+    # Print log level (if enabled)
+    ${log_display_level} && printf "%${_log_level_field_width}s: " "${_msg_log_level}" >&${log_dest}
+    # Print indent
+    printf "%.*s" "${log_indent_amount}" "${log_spaces}" >&${log_dest}
+
+    if [ $# -eq 0 ]
+    then
+        # Only one parameter (in addition to log level) -> simple (static) message
+        printf -- "%s\n" "${__message}" >&${log_dest}
+    else
+        # More than one parameter: the message parameter is a printf format string
+        local _format_string="${__message}"
+        printf -- "${_format_string}" "$@" >&${log_dest}
+    fi
+
+    # Turn off font color (i.e. color back to normal)
+    if ${log_enable_colors} && ${_log_dest_opened_on_terminal}
+    then
+        echo -ne "\e[${_log_colors[Normal]}m" >&${log_dest}
+    fi
+}
+
+error() { log ERROR "$@"; }
+warn() { log WARN "$@"; }
+info() { log INFO "$@"; }
+config() { log CONFIG "$@"; }
+fine() { log FINE "$@"; }
+finer() { log FINER "$@"; }
+finest() { log FINEST "$@"; }
+
+# TODO: correct indentation when printing arrays and maps
+# TODO: prefix the variables with __sa_ (to avoid clashes)
+# TODO: reset alignment after empty and separator lines?
+log_vars() {
+    local _msg_log_level="$1"; shift
+    log_enabled "$_msg_log_level" || return 0
+
+    local _name
+    local _value
+    local _longest_name_length=0
+    for _name in "$@"
+    do
+        [ "${#_name}" -gt "${_longest_name_length}" ] && _longest_name_length="${#_name}"
+    done
+    for _name in "$@"
+    do
+        case "$_name" in
+            " ")
+                log "$_msg_log_level" ""
+            ;;
+            \#*)
+                log "$_msg_log_level" "$(printf "%${_longest_name_length}s\n" "$_name" | sed -r 's/#/ /')"
+            ;;
+            *)
+                if declare -p ${_name} 2>/dev/null | grep -q '^declare \-a'
+                then
+                    log_vars_in_array "$_msg_log_level" "${_name}"
+                elif declare -p ${_name} 2>/dev/null | grep -q '^declare \-A'
+                then
+                    log_vars_in_map "$_msg_log_level" "${_name}"
+                else
+                    # http://mywiki.wooledge.org/BashFAQ/083
+                    if [ -z "${!_name+defined}" ]
+                    then
+                        log "$_msg_log_level" "$(printf "%${_longest_name_length}s: %s\n" "$_name" "'' <undefined or an empty array>")"
+                    else
+                        _value=${!_name}
+                        log "$_msg_log_level" "$(printf "%${_longest_name_length}s: %s\n" "$_name" "'${_value}'")"
+                    fi
+                fi
+            ;;
+        esac
+    done
+}
+
+# TODO: log_vars_in_map and log_vars_in_array are basically the same
+# log_vars_in_map <log level> <map name> [<key>...]
+log_vars_in_map() {
+    local _msg_log_level="$1"; shift
+    log_enabled "$_msg_log_level" || return 0
+    local _mapname="$1"; shift
+
+    declare -p $_mapname 2> /dev/null | grep -q '^declare \-A' || { echo "No such map: '$_mapname'"; return 1; }
+    declare -n _map=$_mapname
+    [ -z "$1" ] && set -- "${!_map[@]}"
+
+    local name
+    local value
+    local name_lengths=""
+    local _longest_name_length=0
+    for name in "$@"
+    do
+        [ "${#name}" -gt "${_longest_name_length}" ] && _longest_name_length="${#name}"
+    done
+    ((_longest_name_length += 4 )) # Add 2 for brackets: '[' and ']', and 2 for indentation
+
+    log "$_msg_log_level" "# ${_mapname}[@]"
+    for name in "$@"
+    do
+        value=${_map[$name]}
+        log "$_msg_log_level" "$(printf "%${_longest_name_length}s: %s\n" "[${name}]" "'${value}'")"
+    done
+}
+
+log_vars_in_array() {
+    local _msg_log_level="$1"; shift
+    log_enabled "$_msg_log_level" || return 0
+    local _arrayname="$1"; shift
+
+    declare -p $_arrayname 2> /dev/null | grep -q '^declare \-a' || { echo "No such array: '$_arrayname'"; return 1; }
+    declare -n _array=$_arrayname
+    [ -z "$1" ] && set -- "${!_array[@]}"
+
+    local index
+    local value
+    local index_lengths=""
+    local longest_index_length=0
+    for index in "$@"
+    do
+        [ "${#index}" -gt "${longest_index_length}" ] && longest_index_length="${#index}"
+    done
+    ((longest_index_length += 4 )) # Add 2 for brackets: '[' and ']', and 2 for indentation
+
+    log "$_msg_log_level" "# ${_arrayname}[@]"
+    for index in "$@"
+    do
+        value=${_array[$index]}
+        log "$_msg_log_level" "$(printf "%${longest_index_length}s: %s\n" "[${index}]" "'${value}'")"
+    done
+}
+
+plus_indent() {
+    ${log_indent_enabled} && (( log_indent_amount += log_indent_increment ))
+}
+
+minus_indent() {
+    (( log_indent_amount -= log_indent_increment ))
+    [ "$log_indent_amount" -lt 0 ] && log_indent_amount=0
+    true
+}
+
+declare -Ag _log_levels=( [OFF]=100 [ERROR]=70 [WARN]=60 [INFO]=50 [CONFIG]=40 [FINE]=30 [FINER]=20 [FINEST]=10 [ALL]=0 )
+# To add custom log levels:
+# > _log_levels[FATAL]=80
+# > log FATAL "Fatal test message."
+
+declare -Ag _log_colors=( [Dark Gray]="1;30" [Blue]="0;34" [Green]="0;32" [Red]="0;31" [Yellow]="1;33" [Purple]="1;35" [White]="1;37" [Orange]="0;33" [Light Red]="1;31" [Normal]="00" )
+
+# Default values...
+effective_log_level_name=OFF
+effective_log_level=${_log_levels[${effective_log_level_name}]}
+# ...that are probably overwritten when first refreshing the log level.
+refresh_effective_log_level
+
+# Log date format as understood by 'date' command. An empty format string
+# turns off printing of timestamp in log messages.
+[ "${log_date_format}" = "time" ] && log_date_format="+%H:%M:%S.%3N"
+
+log_spaces="                                                              "
+# Whether to indent log messages. That is, only the message (not log level or date) is indented.
+log_indent_enabled="${log_indent_enabled:-false}"
+# Log message (initial) indentation that can be controlled with functions 'plus_indent' and 'minus_indent'.
+log_indent_amount=0
+# The width of indentation per call to 'plus_indent' and 'minus_indent'.
+log_indent_increment=2
+# Use colors (e.g. red for errors) in log messages.
+log_enable_colors="${log_enable_colors:-true}"
+# Print the log level alongside the log message.
+log_display_level="${log_display_level:-true}"
+# Align the "textual" log levels in log messages.
+log_align_level="${log_align_level:-false}"
+
+if "${log_align_level}"
+then
+    # The standard (textual) log levels fit in 6 characters
+    #   INFO: Info message
+    # CONFIG: Config message
+    _log_level_field_width=${_log_level_field_width:-6}
+else
+    # Empty field width does not align log levels:
+    # INFO: Info message
+    # CONFIG: Config message
+    _log_level_field_width=""
+fi
+
+# Log destination can be controlled using the following two variables:
+# 1. 'log_dest': file descriptor to write to. Usually set to either '1' (stdout, default)
+#    or '2' (stderr). To separate log output from stdout and stderr one can use other file
+#    descriptors as well:
+#    > log_dest=3 my-command 3>output-from-logging-library.txt
+log_dest=${log_dest:-1}
+# 2. 'log_file': file to write the log output. This overrides the value of 'log_dest'.
+#    Usually it is simpler (and hence recommended) to use 'log_file' if one wishes to
+#    redirect log output to a custom destination.
+if [ -n "${log_file}" ]
+then
+    log_dest=16
+    exec 16>"${log_file}"
+fi
+
+# Test whether the log output destination is "opened on a terminal".
+# (Colored log messages are used only when outputting to a terminal.)
+[ -t "${log_dest}" ] && _log_dest_opened_on_terminal=true || _log_dest_opened_on_terminal=false

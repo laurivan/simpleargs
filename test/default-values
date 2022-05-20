@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" \
+             -n/--name tim,tom,tuco@default,tj \
+             -u/--user @default="root" \
+             -p ports @multivalue, @default=80,81,82 \
+             "<input>" \
+             "[<output>]" @default=output.txt
+
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_valid() {
+    # -n tim --user sshd -p 8080,8090 input.txt
+    value 0 source_result parse_result process_result
+    value tim n name
+    value sshd u user
+    arrayvalue ports 8080 8090
+    value input.txt input
+    value output.txt output
+
+    value tuco n_default name_default
+    value root u_default user_default
+    [ $# -eq 0 ]
+}
+
+test_parameter_default_value() {
+    #
+    #skip
+    value output.txt output_default
+}
+
+test_list_default() {
+    #
+    #skip
+    arrayvalue ports_default 80 81 82
+}
+
+test_valid_with_positional_parameters() {
+    # -n tim --user sshd -p 8080,8090 input.txt out.txt first second
+    value 0 source_result parse_result process_result
+    value tim n name
+    value sshd u user
+    arrayvalue ports 8080 8090
+    value input.txt input
+    value out.txt output
+    [ $# -eq 2 ]
+    [ "$1" = first ]
+    [ "$2" = second ]
+}
+
+test_valid_with_defaults() {
+    # input.txt
+    value 0 source_result parse_result process_result
+    value tuco n name
+    value root u user
+    arrayvalue ports 80 81 82
+    value input.txt input
+    value output.txt output
+    [ $# -eq 0 ]
+}

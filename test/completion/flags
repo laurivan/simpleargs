@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+
+. ${SIMPLEARGS_PROJECT}/src/simpleargs-completion-test-utils
+set -e
+init_terminal ${SIMPLEARGS_PROJECT}/test/resources/example-files-dir
+
+# ------------------------
+type_command 'validationexample -p'
+tab
+# ----------
+assert_terminal_contents <<'EOF'
+>> validationexample -p 
+EOF
+# ----------
+
+backspace 2
+tabtab
+# ----------
+assert_terminal_contents <<'EOF'
+>> validationexample -
+-a            -d            -o            --pass        -t
+--ages        --dogs        --operations  --pattern     -v
+-b            -e            --order       --point       
+--baudrate    -g            --order=      -s            
+-c            -h            -p            --sort        
+--cats        --help        --part        --sort=       
+>> validationexample -
+EOF
+# ----------
+
+type_command '-'
+tabtab
+# ----------
+assert_terminal_contents <<'EOF'
+>> validationexample -
+-a            -d            -o            --pass        -t
+--ages        --dogs        --operations  --pattern     -v
+-b            -e            --order       --point       
+--baudrate    -g            --order=      -s            
+-c            -h            -p            --sort        
+--cats        --help        --part        --sort=       
+>> validationexample --
+--ages        --dogs        --order       --pass        --sort
+--baudrate    --help        --order=      --pattern     --sort=
+--cats        --operations  --part        --point       
+>> validationexample --
+EOF
+# ----------
+
+type_command 'a'
+tab
+# ----------
+assert_terminal_contents <<'EOF'
+>> validationexample -
+-a            -d            -o            --pass        -t
+--ages        --dogs        --operations  --pattern     -v
+-b            -e            --order       --point       
+--baudrate    -g            --order=      -s            
+-c            -h            -p            --sort        
+--cats        --help        --part        --sort=       
+>> validationexample --
+--ages        --dogs        --order       --pass        --sort
+--baudrate    --help        --order=      --pattern     --sort=
+--cats        --operations  --part        --point       
+>> validationexample --ages 
+EOF
+# ----------
+
+reset_terminal
+type_command 'validationexample --o'
+tabtab
+# ----------
+assert_terminal_contents <<'EOF'
+>> validationexample --o
+--operations  --order       --order=      
+>> validationexample --o
+EOF
+# ----------
+
+type_command 'r'
+tab
+# ----------
+assert_terminal_contents <<'EOF'
+>> validationexample --o
+--operations  --order       --order=      
+>> validationexample --order
+EOF
+# ----------
+
+tabtab
+# ----------
+assert_terminal_contents <<'EOF'
+>> validationexample --o
+--operations  --order       --order=      
+>> validationexample --order
+--order   --order=  
+>> validationexample --order
+EOF
+# ----------
+
+type_command '='
+tabtab
+# ----------
+assert_terminal_contents <<'EOF'
+>> validationexample --o
+--operations  --order       --order=      
+>> validationexample --order
+--order   --order=  
+>> validationexample --order=
+name     none     size     time     version  yes no   
+>> validationexample --order=
+EOF
+# ----------
+

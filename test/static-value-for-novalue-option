@@ -1,0 +1,169 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" \
+             --compress @onvalue="--crf 23" \
+             --disable-x @offvalue="--enable-x" \
+             --use-b-mode @onvalue="-b" @offvalue="-a" \
+             --both-empty @onvalue="" @offvalue="" \
+             --on-empty @onvalue="" @offvalue=off \
+             --off-empty @onvalue=on @offvalue="" \
+             --only-on-empty @onvalue="" \
+             --only-off-empty @offvalue="" \
+
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+# The rationale described using example use cases:
+# 1. Switch on a subcommand flag using an option
+#   > mycommand --compress
+# is used in the script like
+#   convertvideo ${compress} # Uses Constant Rate Factor 23 for compressing if switched on
+#
+# 2. Switch off a subcommand flag using an option
+#   > mycommand --disable-x
+# is used in the script like
+#   subcommand ${disable_x}
+# ...expands to null if the option is given
+# ...and to '--enable-x' if the option is NOT given
+# So, in plain English: If you use --disable-x ${disable_x} expands to null
+# and hence the 'x feature' won't get enabled. If you do NOT use --disable-x
+# ${disable_x} expands to '--enable-x' and hence the 'x feature' is enabled.
+#
+# 3. Let's say the subcommand can be used in two ways (or you want to use it
+# in only two ways) and the modes are specified using -a or -b (exclusive).
+# Now you can specify the other mode as default (corresponds to @offvalue).
+#   > mycommand --use-b-mode
+# is used in the script like
+#   subcommand ${use_b_mode}
+# where the variable expands to '-b' or '-a' based on whether --use-b-mode
+# is given or not (respectively).
+#
+# The table below describes the relationship between using @onvalue and @offvalue
+# directives and the value that the option variable takes when the flag is on or off:
+#
+#                               |  on      off
+# ---------------------------------------------
+#                               |  true    false
+# @onvalue="-x"                 |  -x      ""
+# @onvalue="-x" @offvalue="-o"  |  -x      -o
+# offvalue="-o"                 |  ""      -o
+
+test_option_onvalue_on() {
+    # --compress
+    value 0 source_result parse_result process_result
+    value "--crf 23" compress
+    [ $# -eq 0 ]
+}
+
+test_option_onvalue_off() {
+    #
+    value 0 source_result parse_result process_result
+    empty compress
+    [ $# -eq 0 ]
+}
+
+test_option_offvalue_on() {
+    # --disable-x
+    value 0 source_result parse_result process_result
+    empty disable_x
+    [ $# -eq 0 ]
+}
+
+test_option_offvalue_off() {
+    #
+    value 0 source_result parse_result process_result
+    value "--enable-x" disable_x
+    [ $# -eq 0 ]
+}
+
+test_option_onoffvalue_on() {
+    # --use-b-mode
+    value 0 source_result parse_result process_result
+    value "-b" use_b_mode
+    [ $# -eq 0 ]
+}
+
+test_option_onoffvalue_off() {
+    #
+    value 0 source_result parse_result process_result
+    value "-a" use_b_mode
+    [ $# -eq 0 ]
+}
+
+test_option_both_empty_on() {
+    # --both-empty
+    value 0 source_result parse_result process_result
+    empty both_empty
+    [ $# -eq 0 ]
+}
+
+test_option_both_empty_off() {
+    #
+    value 0 source_result parse_result process_result
+    empty both_empty
+    [ $# -eq 0 ]
+}
+
+test_option_onvalue_empty_on() {
+    # --on-empty
+    value 0 source_result parse_result process_result
+    empty on_empty
+    [ $# -eq 0 ]
+}
+
+test_option_onvalue_empty_off() {
+    #
+    value 0 source_result parse_result process_result
+    value "off" on_empty
+    [ $# -eq 0 ]
+}
+
+test_option_offvalue_empty_on() {
+    # --off-empty
+    value 0 source_result parse_result process_result
+    value "on" off_empty
+    [ $# -eq 0 ]
+}
+
+test_option_offvalue_empty_off() {
+    #
+    value 0 source_result parse_result process_result
+    empty off_empty
+    [ $# -eq 0 ]
+}
+
+test_option_only_onvalue_empty_on() {
+    # --only-on-empty
+    value 0 source_result parse_result process_result
+    empty only_on_empty
+    [ $# -eq 0 ]
+}
+
+test_option_only_onvalue_empty_off() {
+    #
+    value 0 source_result parse_result process_result
+    empty only_on_empty
+    [ $# -eq 0 ]
+}
+
+test_option_only_offvalue_empty_on() {
+    # --only-off-empty
+    value 0 source_result parse_result process_result
+    empty only_off_empty
+    [ $# -eq 0 ]
+}
+
+test_option_only_offvalue_empty_off() {
+    #
+    value 0 source_result parse_result process_result
+    empty only_off_empty
+    [ $# -eq 0 ]
+}

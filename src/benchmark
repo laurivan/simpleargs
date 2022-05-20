@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+
+# Utility to allow a function to return a value by either echoing it
+# or by storing it into a variable. Normally the value is echoed but
+# if variable "__retname" is defined the value is stored into a variable
+# whose name is the contents of __retname. So, if a function is defined as
+#
+# foo() {
+#   local result="..."
+#   echo_or_store "${result}"
+# }
+#
+# and one wants to get the result value into a variable (instead of echoing it):
+#
+# __retname=fooResult foo
+# doSomething "${fooResult}"
+sa_echo_or_store() {
+    local __retval="$1"
+    local __retcode="${2:-0}"
+    if [ -n "$__retname" ]
+    then
+        declare -n return_tmp="${__retname}"
+        return_tmp="${__retval}"
+    else
+        echo "$__retval"
+    fi
+    return "$__retcode"
+}
+
+# Return current time in milliseconds
+sa_current_time_millis() { sa_echo_or_store $(date +%s%3N); }
+
+# Stopwatch usage:
+# sa_stopwatch_reset important
+# for i in ...
+# do
+#     do-something
+#     do-something-else
+#
+#     # Measure how much time is spent in 'do-something-important'
+#     sa_stopwatch_start important
+#     do-something-important
+#     sa_stopwatch_stop important
+# done
+# sa_stopwatch_print important # Prints e.g.: 4523 ms (important)
+
+sa_stopwatch_start() {
+    declare -n stopwatch_running=_stopwatch_running${1:+_$1}
+    if [ "${stopwatch_running}" = "true" ]
+    then
+        echo "ERROR: Stopwatch already running${1:+ (${1})}" >&2
+        return 1
+    else
+        stopwatch_running=true
+        declare -n stopwatch_count=_stopwatch_count${1:+_$1}
+        [ -n "${stopwatch_count}" ] || __retname=_stopwatch_count${1:+_$1} sa_echo_or_store 0
+        __retname=_sa_stopwatch_start${1:+_$1} sa_current_time_millis
+    fi
+}
+
+sa_stopwatch_stop() {
+    declare -n stopwatch_running=_stopwatch_running${1:+_$1}
+    if [ "${stopwatch_running}" != "true" ]
+    then
+        echo "ERROR: Stopwatch already stopped${1:+ (${1})}" >&2
+        return 1
+    else
+        stopwatch_running=false
+        declare -n stopwatch_count=_stopwatch_count${1:+_$1}
+        declare -n stopwatch_start=_sa_stopwatch_start${1:+_$1}
+        __retname="_stopwatch_count${1:+_$1}" sa_echo_or_store $(( ${stopwatch_count} + $(sa_current_time_millis) - ${stopwatch_start} ))
+    fi
+}
+
+sa_stopwatch_print() {
+    local namespace="$1"
+    declare -n tmp_count=_stopwatch_count${namespace:+_${namespace}}
+    printf "%s %4d ms${namespace:+ (${namespace})}\n" "-----" "${tmp_count}"
+}
+
+sa_stopwatch_reset() {
+    declare -n stopwatch_running=_stopwatch_running${1:+_$1}
+    declare -n stopwatch_count=_stopwatch_count${1:+_$1}
+    stopwatch_running=false
+    stopwatch_count=0
+}
+
+# Set _tic to current time
+# $1: namespace of tic-toc watch (return variables are suffixed with _<namespace>)
+sa_tic_time() {
+    __retname=_tic${1:+_$1} sa_current_time_millis
+}
+
+# Add $1 (milliseconds) to current _tic
+# $1: time to add to tic_time (in milliseconds)
+# $2: namespace of tic-toc watch (return variables are suffixed with _<namespace>)
+sa_tic_time_plus() {
+    local added_time="$1"
+    (( _tic${2:+_$2} = _tic${2:+_$2} + $added_time ))
+}
+
+# Set _toc to the time between _tic and the current time
+# $1: namespace of tic-toc watch (return variables are suffixed with _<namespace>)
+sa_toc_time() {
+    __retname=_toctmp sa_current_time_millis
+    (( _toc${1:+_$1} = $(sa_current_time_millis) - _tic${1:+_$1} ))
+}
+
+# Set toc_time to the time between tic_time and current time
+# and set tic_time to current time
+# $1: namespace of tic-toc watch (return variables are suffixed with _<namespace>)
+sa_toc_tic_time() {
+    sa_toc_time $1
+    sa_tic_time $1
+}
+
+sa_print_toc_time() {
+    local namespace="$1"
+    declare -n tmp_toc=_toc${namespace:+_${namespace}}
+    printf "%s %4d ms${namespace:+ (${namespace})}\n" "-----" "${tmp_toc}"
+}
+
+sa_toc_and_print() {
+    local namespace="$1"
+    sa_toc_time "${namespace}"
+    sa_print_toc_time "${namespace}"
+}
+
+sa_ms2s() {
+    local ms="$1"
+    [ ${#ms} -lt 4 ] && { ms="0000${ms}"; ms=${ms: -4}; }
+    sa_echo_or_store "${ms:0:-3}.${ms: -3}"
+}
+
+# Example:
+# sa_tic_time; sleep 1.34; sa_toc_time; sa_ms2s $_toc
+# -> prints e.g. 1.346
+#
+# OR
+# sa_tic_time mytimer; sleep 0.46; sa_toc_time mytimer; sa_ms2s $_toc_mytimer
+# -> prints e.g. 0.468

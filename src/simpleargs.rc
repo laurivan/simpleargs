@@ -1,0 +1,327 @@
+#!/usr/bin/env bash
+
+# Convenience function to check that the system has (hopefully) all the
+# required utility commands available.
+sa-requirements() {
+    local cmd
+    local cmd_status
+    local exit_code=0
+    for cmd in bash bc cut date envsubst eval fmt getopt grep gzip printf sed tr
+    do
+        cmd_status="OK"
+        case "${cmd}" in
+            bash)
+                [ "${BASHVERSINFO}" -eq 5 ] || cmd_status="FAIL (Bash version is not 5)"
+                ;;
+            getopt)
+                if type "${cmd}" >/dev/null 2>&1
+                then
+                    getopt --test >/dev/null # Check that one has the "enhanced" getopt
+                    [ $? -eq 4 ] || cmd_status="FAIL (not enhanced getopt)"
+                else
+                    cmd_status="FAIL (not found)"
+                fi
+                ;;
+            grep)
+                if grep --version 2>/dev/null | grep -q "GNU grep"
+                then
+                    :
+                else
+                    cmd_status="FAIL (not GNU grep)"
+                fi
+                ;;
+            date)
+                if type "${cmd}" >/dev/null 2>&1
+                then
+                    local date_output="$(date +%s%3N)"
+                    if [ "${date_output}" -ne "${date_output}" ]
+                    then
+                        cmd_status="FAIL (does not support field width)"
+                    fi
+                else
+                    cmd_status="FAIL (not found)"
+                fi
+                ;;
+            sed)
+                if sed --version 2>/dev/null | grep --silent "GNU sed"
+                then
+                    :
+                else
+                    cmd_status="FAIL (not GNU sed)"
+                fi
+                ;;
+            *)
+                type "${cmd}" >/dev/null 2>&1 || cmd_status="FAIL (not found)"
+                ;;
+        esac
+        [ "${cmd_status}" = "OK" ] || exit_code=1
+        printf "%10s %s\n" "${cmd}" "${cmd_status}"
+    done
+    if [ "${exit_code}" -ne 0 ]
+    then
+        echo "ERROR: not all requirements are met"
+        echo "Have you installed GNU coreutils?"
+    fi
+    return "${exit_code}"
+}
+
+# This function is invoked at the bottom of this file but can also be used to
+# refresh the completion functionality manually (usually there's no need to).
+sa-refresh-completion() {
+    local simpleargs_completion="${SIMPLEARGS_DIR}/simpleargs-completion"
+    if [ -r "${simpleargs_completion}" ]
+    then
+        . "${simpleargs_completion}" ||
+            { echo "ERROR: sourcing simpleargs completion: '${simpleargs_completion}'" >&2;
+              return 1; }
+    else
+        echo "ERROR: simpleargs completion file not found (or not readable): '${simpleargs_completion}'" >&2
+        return 1
+    fi
+
+    local simpleargs_completed_scripts_dir="${SIMPLEARGS_DIR}/completed-scripts"
+    if [ -d "${simpleargs_completed_scripts_dir}" ]
+    then
+        if ls "${simpleargs_completed_scripts_dir}"/* >/dev/null 2>&1
+        then
+            local script
+            for script in "${simpleargs_completed_scripts_dir}"/*
+            do
+                complete -F _simpleargs_general_completion "${script##*/}"
+            done
+        fi
+    else
+        mkdir "${simpleargs_completed_scripts_dir}"
+    fi
+}
+
+sa-clean-completion() {
+    local simpleargs_completed_scripts_dir="${SIMPLEARGS_DIR}/completed-scripts"
+    if ls "${simpleargs_completed_scripts_dir}"/* >/dev/null 2>&1
+    then
+        rmdir "${simpleargs_completed_scripts_dir}"/*
+    fi
+}
+
+sa-create-script() {
+    local usage="\
+Usage: ${FUNCNAME} [minimal|template|verbose] <script name>
+       ${FUNCNAME} -h/--help
+Example: ${FUNCNAME} minimal myscript
+Create a script with varying degree of example content:
+ - minimal: minimal content for using simpleargs library (default)
+ - template: simple example script
+ - verbose: more versatile example"
+    if [ "$1" = "-h" ] || [ "$1" = "--help" ]
+    then
+        echo "${usage}"
+        return 1
+    fi
+
+    local type file
+    if [ $# -eq 1 ]
+    then
+        type=minimal
+        file="$1"
+    elif [ $# -eq 2 ]
+    then
+        type="$1"
+        file="$2"
+    else
+        echo "${usage}" >&2
+        return 1
+    fi
+
+    [[ "${type}" =~ ^(minimal|template|verbose)$ ]] || { echo "${usage}" >&2; return 1; }
+    [ -z "${file}" ] && { echo "${usage}" >&2; return 1; }
+    [ -e "${file}" ] && { echo "'${file}' already exists" >&2; return 1; }
+    touch "${file}" || { echo "Failed to create file: '${file}'" >&2; return 1; }
+    chmod u+x "${file}" || { echo "Failed set file executable: '${file}'" >&2; return 1; }
+    case "${type}" in
+        minimal)
+            ########## Minimal script ##########
+cat <<'EOF' >> "${file}"
+#!/usr/bin/env bash
+
+# -------------------------------- simpleargs --------------------------------
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+sa_parse "$0"
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------
+EOF
+;;
+        template)
+            ########## Template script ##########
+cat <<'EOF' >> "${file}"
+#!/usr/bin/env bash
+
+sa_short_description=""
+sa_long_description=(
+"Paragraph 1"
+"Paragraph 2"
+)
+
+# -------------------------------- simpleargs --------------------------------
+# : ${SIMPLEARGS:=$(dirname "$0")/simpleargs-bundle}
+# : ${SIMPLEARGS:=/usr/lib/simpleargs/simpleargs-bundle}
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+
+sa_parse "$0" -u/--user arg -p/--port arg "<input file>"
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------
+
+log_level=INFO
+log_vars INFO user port input_file
+EOF
+;;
+        verbose)
+            ########## Verbose script ##########
+sed "s|@script-basename@|$(basename "${file}")|" <<'EOF' >> "${file}"
+#!/usr/bin/env bash
+
+sa_script_long_name="ABC Inc. @script-basename@"
+sa_script_version=1.0
+sa_script_build="build 1"
+sa_short_description="example simpleargs script"
+sa_long_description=(
+"Demonstrates the usage of simpleargs library."
+"The second paragraph of the script description can be seen on the man page"
+)
+sa_default_tokens=( @expand=help @expand=version )
+
+# -------------------------------- simpleargs --------------------------------
+# : ${SIMPLEARGS:=$(dirname "$0")/simpleargs-bundle}
+# : ${SIMPLEARGS:=/usr/lib/simpleargs/simpleargs-bundle}
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+
+sa_parse "$0" \
+         -u/--user arg @default=root @doc="OS user to use (default: @{d})." \
+         -p/--port arg @default=80 @doc="Connection port (default: @{d})." \
+         "<input file>" @@glob "*.txt" @doc="Input file with .txt suffix."
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------
+
+echo "User '${user}' connecting to port ${port} (input: ${input_file})"
+EOF
+;;
+        *)
+            echo "${usage}" >&2
+            return 1
+            ;;
+    esac
+
+    echo "Created script '${file}'"
+    if [ -n "${SA_SCRIPT_EDITOR}" ]
+    then
+        ${SA_SCRIPT_EDITOR} "${file}"
+    fi
+}
+
+# When ${SA_EAGER_CACHE_REFRESH} is set to "true" this function is executed
+# if no completion routine has been defined for the command (for which
+# the auto completion was tried). This function can then check if there is
+# such completion routine available.
+#
+# This function first tries to figure out if the command in question is
+# a simpleargs based script and if yes, it runs it with sa_parse_only=true
+# "modifier" to generate the cache file and completion routine marker
+# (a directory under ~/.simpleargs.d/completed-scripts). It then runs
+# sa-refresh-completion to assign the simpleargs completion routine to
+# this command and returns 124 to signal that the completion should be
+# retried.
+#
+# If the command in question is not a simpleargs based script the execution
+# is handed to the system's own completion loader function.
+_sa_completion_loader() {
+    local __sa_start=$(date +%s%3N)
+    local exit_status
+    local command="$1"
+    local command_base_name="${command##*/}"
+    _sa_tty_echo WARN $'\n\n'"------------------------- _sa_completion_loader --------------------------------"
+    _sa_tty_echo INFO "          command: '${command}'"
+    _sa_tty_echo INFO "command_base_name: '${command_base_name}'"
+
+    local script_path
+    if [ "${command}" = "${command_base_name}" ]
+    then
+        # Command in PATH is used e.g. 'ls'
+        # TODO: revise (test 'which' with binaries, functions, aliases, builtins, etc.)
+        # TODO: or use --skip-alias --skip-functions
+        script_path=$(which "${command}" 2>/dev/null)
+        if which "${command}" >/dev/null 2>&1
+        then
+            script_path=$(which "${command}" 2>/dev/null)
+        else
+            _sa_tty_echo INFO "Command '${command}' not in PATH"
+        fi
+    else
+        # Command is used directly e.g. './process.sh'
+        script_path="${command}"
+    fi
+    _sa_tty_echo INFO "script_path: '${script_path}'"
+
+    if [ -f "${script_path}" ]
+    then
+        # TODO: this is very fragile (changing one character in the script's header breaks this)
+        if grep -Fq 'sa_parse "$0"' "${script_path}" &&
+           grep -Fq 'sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"' "${script_path}"
+        then
+            _sa_tty_echo INFO "Most probably a simpleargs-based script: running parse only"
+            sa_parse_only=true ${command} >/dev/null 2>&1
+            if [ $? -eq 0 ]
+            then
+                _sa_tty_echo INFO "Success"
+                sa-refresh-completion
+                exit_status=124
+            else
+                _sa_tty_echo INFO "Failure"
+                exit_status=1
+            fi
+        else
+            _sa_tty_echo INFO "Does not seem to be a simpleargs-based script"
+            exit_status=-1
+        fi
+    else
+        exit_status=-1
+    fi
+
+    local __sa_end=$(date +%s%3N)
+    _sa_tty_echo INFO "Took: $(( __sa_end - __sa_start )) ms"
+    if [ "${exit_status}" -ge 0 ]
+    then
+        return "${exit_status}"
+    else # exit_status == -1
+        if [ -n "${_sa_system_completion_loader}" ]
+        then
+            if [ "${_sa_system_completion_loader}" = "${FUNCNAME}" ]
+            then
+                _sa_tty_echo INFO "Not calling '${_sa_system_completion_loader}' (avoid infinite recursion)"
+            else
+                _sa_tty_echo INFO "Running system completion loader: '${_sa_system_completion_loader}'"
+                ${_sa_system_completion_loader} "${command}"
+            fi
+        else
+            _sa_tty_echo INFO "No system completion loader set: returning"
+        fi
+    fi
+}
+
+# This is a development convenience trick. Without it there's no auto completion functionality
+# for a newly created script that hasn't been run yet (one needs to run it first and then
+# refresh the completion definitions by e.g. opening a new shell).
+if [ "${SA_EAGER_CACHE_REFRESH}" = "true" ]
+then
+    # Store the original system completion loader so that we can call it
+    # (if the command tried to be completed is not a simpleargs based one).
+    _sa_system_completion_loader="$(complete -p -D 2>/dev/null | sed -r 's/^complete.*-F ([^ ]+).*/\1/')"
+    #echo "System completion loader: '${_sa_system_completion_loader}'"
+    # Replace the system completion loader with our own
+    complete -D -F _sa_completion_loader -o bashdefault -o default
+fi
+
+# An easy way of including simpleargs generated man pages in MANPATH
+export PATH="${PATH}:${HOME}/.simpleargs.d/bin"
+# "Revert" https://bugs.launchpad.net/ubuntu/+source/npm/+bug/1211104#yui_3_10_3_1_1401988279719_290
+[[ "${COMP_WORDBREAKS}" = *=* ]] || COMP_WORDBREAKS="${COMP_WORDBREAKS}="
+
+sa-refresh-completion

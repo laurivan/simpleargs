@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+
+open_terminal() {
+    local terminal="$1"
+    local init_time="${2:-3}"
+    ${terminal} &
+    sleep "${init_time}"
+
+    enter_command 'echo _terminal_window_id=$(xdotool getwindowfocus)'
+    sleep 1
+    enter_command 'echo "_terminal_pid=$$"'
+    terminal_to_clipboard
+    echo "Sourcing ----------------------------------"
+    xclip -selection XA_CLIPBOARD -out | grep -E "^[a-z_]+="
+    echo "-------------------------------------------"
+
+    source <(xclip -selection XA_CLIPBOARD -out | grep -E "^[a-z_]+=")
+    echo "Extracted:"
+    echo " - window ID: '${_terminal_window_id}'"
+    echo " - PID: '${_terminal_pid}'"
+}
+
+init_terminal() {
+    local dir="$1"
+    clear_command
+    if [ -n "${dir}" ]
+    then
+        type_command "cd ${dir}"
+        enter
+    fi
+    reset_terminal
+}
+
+kill_test_terminal() {
+    local pid="$1"
+    if [ -n "${pid}" ] && kill -0 "${pid}"
+    then
+        log INFO "Killing test window, PID: ${pid}"
+        kill -15 "${pid}"
+    fi
+}
+
+test_window() { xdotool windowfocus "${test_window_id}"; sleep 0.2; }
+main_window() { sleep 0.1; xdotool windowfocus "${main_window_id}"; }
+
+enter() { xdotool key Return; }
+tab() { xdotool key Tab; }
+tabtab() { xdotool key Tab Tab; }
+clear_command() { xdotool key ctrl+a ctrl+k; }
+backspace() {
+    local times="${1:-1}"
+    local i
+    for i in $(seq 1 ${times})
+    do
+        xdotool key BackSpace
+    done
+}
+
+move_left() {
+    local times="${1:-1}"
+    local i
+    for i in $(seq 1 ${times})
+    do
+        xdotool key Left
+    done
+}
+
+move_right() {
+    local times="${1:-1}"
+    local i
+    for i in $(seq 1 ${times})
+    do
+        xdotool key Right
+    done
+}
+
+type_command() {
+    if [ -n "$*" ]
+    then
+        xdotool type --delay 15 -- "$*"
+    fi
+}
+
+enter_command() {
+    if [ -n "$*" ]
+    then
+        type_command "$@"
+        enter
+    fi
+}
+
+reset_terminal() {
+    echo "Resetting terminal"
+    clear_command
+    # https://stackoverflow.com/questions/5367068/clear-a-terminal-screen-for-real
+    enter_command 'printf "\033c"'
+    sleep 0.2
+}
+
+terminal_to_clipboard() {
+    # Wait for terminal to update
+    sleep 0.3
+    xdotool key ctrl+shift+a
+    xdotool key ctrl+shift+c
+}
+
+terminal_to_file() {
+    terminal_to_clipboard
+    xclip -selection XA_CLIPBOARD -out > "${1}"
+}
+
+assert_terminal_contents() {
+    echo "Asserting terminal contents"
+    # Copy the expected content (from stdin) to a file.
+    if ! [ -d /tmp/simpleargs ]
+    then
+        mkdir /tmp/simpleargs || { echo "Cannot create /tmp/simpleargs"; exit 1; }
+    fi
+    cat > /tmp/simpleargs/sa-terminal-expected-contents
+    # Copy terminal contents to clipboard and then to file...
+    terminal_to_file /tmp/simpleargs/sa-terminal-actual-contents
+    # ...and compare (pipe to 'cat' in order to better see whitespace differences)
+    diff /tmp/simpleargs/sa-terminal-expected-contents /tmp/simpleargs/sa-terminal-actual-contents | cat -A
+    return ${PIPESTATUS[0]}
+}

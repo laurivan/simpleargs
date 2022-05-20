@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+###########################################
+
+test_user_flag() {
+    # --user Adam
+    #clearcache
+    [ "$source_result" -eq 0 ]
+
+    sa_expand_token_user=( -u/--user arg @@glob "A*" )
+    sa_parse "$0" @expand=user
+    parse_result=$?
+    [ "$parse_result" -eq 0 ] &&
+        sa_process "$@"; process_result=$?
+    [ "$process_result" -eq 0 ] &&
+        eval "set -- ${sa_args}"
+
+    value Adam u user
+    value 0 source_result parse_result process_result
+    [ $# -eq 0 ]
+}
+
+test_user_flag_invalid_value() {
+    # --user Jack
+    #clearcache
+    [ "$source_result" -eq 0 ]
+
+    sa_expand_token_user=( -u/--user arg @@glob "A*" )
+    sa_parse "$0" @expand=user
+    parse_result=$?
+    [ "$parse_result" -eq 0 ] &&
+        sa_process "$@" || process_result=$?
+
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_no_expand_token_valid() {
+    # --id @id@foo
+    #clearcache
+    [ "$source_result" -eq 0 ]
+
+    log_level=FINE
+    sa_expand_token_user=( -u/--user arg @@glob "A*" )
+    sa_parse "$0" --id arg "@@grep @id@.*"
+    parse_result=$?
+    [ "$parse_result" -eq 0 ] &&
+        sa_process "$@"; process_result=$?
+    [ "$process_result" -eq 0 ] &&
+        eval "set -- ${sa_args}"
+
+    value 0 source_result parse_result process_result
+    value @id@foo id
+}
+
+test_no_expand_token_invalid() {
+    # --id no-at-prefix
+    #clearcache
+    [ "$source_result" -eq 0 ]
+
+    sa_expand_token_user=( -u/--user arg @@glob "A*" )
+    sa_parse "$0" --id arg "@@grep @@.*"
+    parse_result=$?
+    [ "$parse_result" -eq 0 ] &&
+        sa_process "$@" || process_result=$?
+
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_zero_length_expansion() {
+    # --user jack
+    #clearcache
+    sa_expand_token_user=()
+    log_level=FINE
+
+    [ "$source_result" -eq 0 ]
+    sa_parse "$0" @expand=user ||
+        parse_result=$?
+
+    value 0 source_result
+    value "${SA_PARSE_INVALID_ARGUMENTS}" parse_result
+}
+
+test_multiple_expand_tokens() {
+    # --port 1024
+    #clearcache
+    sa_expand_token_port=( --port arg @default=8080 @doc="Port to be used. Default: @{d}")
+    sa_expand_token_fruit=( -f/--fruit apple,orange,mango@default )
+    sa_expand_token_notready=( @@@ )
+
+    log_level=FINE
+    [ "$source_result" -eq 0 ]
+    sa_parse "$0" @expand=port @expand=fruit @expand=notready
+    parse_result=$?
+    [ "$parse_result" -eq 0 ]
+    sa_process "$@"
+    process_result=$?
+
+    value 0 source_result parse_result process_result
+    value 1024 port
+    value mango f fruit
+}
+
+test_infinite_expansion() {
+    #
+    #clearcache
+    sa_expand_token_foo=( @expand=bar )
+    sa_expand_token_bar=( @expand=foo )
+
+    [ "$source_result" -eq 0 ]
+    sa_parse "$0" @foo@ ||
+        parse_result=$?
+
+    value 0 source_result
+    value "${SA_PARSE_INVALID_ARGUMENTS}" parse_result
+}

@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+# Invocation: foo2bar input.txt output.txt
+input_file="$1"
+output_file="$2"
+sed 's/foo/bar/g' "${input_file}" > "${output_file}"

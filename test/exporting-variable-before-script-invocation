@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+
+user() {
+    echo "Running function 'user'"
+}
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" -v @allowrepeat --user arg --port arg @default=80 "[<file>]" "[<others>]..."
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+# This test is for checking that option and param variables are unset in case
+# they are already set upon script invocation. From the todo.txt
+# * Remember to unset all the option value variables in case they've been defined (and exported)
+#   before calling the script). That is, script 'foobar' defined using
+#     sa_parse "$0" --flag param
+#   and invoked
+#     > export param="something"
+#     > foobar
+#   results in 'param' having a value even though --flag was not specified.
+
+test_no_arguments() {
+    #
+    value 0 source_result parse_result process_result
+    value false v
+    value 0 v_count
+    empty user file
+    value 80 port
+    arrayvalue others
+    [ $# -eq 0 ]
+    # Check that only 'user' variable is unset but not the function.
+    equals "Running function 'user'" "$(user)"
+}
+
+test_arguments() {
+    # --user john --port 5432 myfile.txt
+    value 0 source_result parse_result process_result
+    value false v
+    value 0 v_count
+    value john user
+    value myfile.txt file
+    value 5432 port
+    arrayvalue others
+    [ $# -eq 0 ]
+    equals "Running function 'user'" "$(user)"
+}
+
+test_more_arguments() {
+    # --user john -vv myfile.txt one two
+    value 0 source_result parse_result process_result
+    value true v
+    value 2 v_count
+    value john user
+    value myfile.txt file
+    value 80 port
+    arrayvalue others one two
+    [ $# -eq 0 ]
+    equals "Running function 'user'" "$(user)"
+}
+
+test_no_arguments_with_exported_variables() {
+    #
+    #before export user=jack
+    #before export v=foobar
+    #before export v_count=foobar
+    #before export port=1111
+    #before export port_default=2222
+    #before export file=foobar.txt
+    #before export others=othersvalue
+    log_vars ERROR user file v port port_default others
+    value 0 source_result parse_result process_result
+    empty user file
+    value false v
+    value 80 port
+    value 80 port_default
+    arrayvalue others
+    [ $# -eq 0 ]
+    equals "Running function 'user'" "$(user)"
+}
+
+test_arguments_with_exported_variables() {
+    # --user john -vv --port 22 myfile.txt one two
+    #before export user=jack
+    #before export v=foobar
+    #before export v_count=foobar
+    #before export port=1111
+    #before export port_default=2222
+    #before export file=foobar.txt
+    #before export others=othersvalue
+    value 0 source_result parse_result process_result
+    value john user
+    value true v
+    value 2 v_count
+    value 22 port
+    value 80 port_default
+    value myfile.txt file
+    arrayvalue others one two
+    [ $# -eq 0 ]
+    equals "Running function 'user'" "$(user)"
+}

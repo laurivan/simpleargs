@@ -1,0 +1,253 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0"
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_log_level() {
+    #
+    #before export log_level=INFO
+    #before export log_indent_enabled=false
+    #before export log_align_level=false
+    #before export log_date_format=""
+
+    value 0 source_result parse_result process_result
+    value INFO effective_log_level_name
+    value 50 effective_log_level
+
+    output="$(log CONFIG Message)"; empty output
+    output="$(log FINE Message)"; empty output
+    output="$(log FINER Message)"; empty output
+    output="$(log FINEST Message)"; empty output
+    output="$(log 49 Message)"; empty output
+    output="$(log 48 Message)"; empty output
+    output="$(log 0 Message)"; empty output
+
+    output="$(log INFO "Message 1")"; value "INFO: Message 1" output
+    output="$(log WARN "Message 2")"; value "WARN: Message 2" output
+    output="$(log ERROR "Message 3")"; value "ERROR: Message 3" output
+    output="$(log 50 "Message 50")"; value "50: Message 50" output
+    output="$(log 51 "Message 51")"; value "51: Message 51" output
+}
+
+test_invalid_log_level() {
+    #
+    #before export log_level=FINNER
+    value 0 source_result parse_result process_result
+    [ "${effective_log_level_name}" = OFF ]
+    [ "${effective_log_level}" = 100 ]
+    grep --silent "No such log level: 'FINNER'" "${sa_test_stderr}"
+}
+
+test_log_to_file() {
+    #
+    #before export log_level=WARN
+    #before export log_file=/tmp/sa-log-test-log-file
+    #before export log_indent_enabled=false
+    #before export log_display_level=false
+    #before export log_date_format=""
+    #after rm /tmp/sa-log-test-log-file
+    log ERROR "This should end up in the log file."
+    grep --silent "^This should end up in the log file.$" /tmp/sa-log-test-log-file || false
+}
+
+test_log_date_format() {
+    #
+    #before export log_level=WARN
+    #before export log_indent_enabled=false
+    #before export log_display_level=false
+    #before export log_date_format="+%H:%M:%S"
+
+    log ERROR "Test message"
+    grep --silent "^[0-5][0-9]:[0-5][0-9]:[0-5][0-9] Test message$" "${sa_test_stdout}" || false
+}
+
+# To include this test case:
+# 1. Open a terminal
+# 2. Run 'tty' to obtain the name of the file connected to the terminal (e.g. /dev/pts/25)
+# 3. Provide the file using environment variable 'sa_test_terminal'. For example,
+#    > sa_test_terminal=/dev/pts/25 sa-run-test-bundle log-tests
+test_log_to_terminal() {
+    #
+    #before export log_level=FINE
+    #before export log_file="${sa_test_terminal}"
+    if [ -c "${sa_test_terminal}" ]
+    then
+        log ERROR error
+        log WARN warn
+        log INFO info
+        log CONFIG config
+        log FINE fine
+    else
+        skip "Provide test terminal by specifying e.g. sa_test_terminal=/dev/pts/25"
+    fi
+}
+
+test_reset_log_level() {
+    #
+    #before export log_level=INFO
+    #before export log_indent_enabled=false
+    #before export log_display_level=false
+    #before export log_date_format=""
+
+    output="$(log ERROR "A should be printed")"; value "A should be printed" output
+    output="$(log WARN "B should be printed")"; value "B should be printed" output
+    output="$(log INFO "C should be printed")"; value "C should be printed" output
+    output="$(log CONFIG "D should not be printed")"; empty output
+    output="$(log FINE "E should not be printed")"; empty output
+    log_level=FINER
+    output="$(log 20 "20 should be printed")"; value "20 should be printed" output
+    output="$(log 21 "21 should be printed")"; value "21 should be printed" output
+    output="$(log 19 "19 should not be printed")"; empty output
+    output="$(log FINE "F should be printed")"; value "F should be printed" output
+    output="$(log FINER "G should be printed")"; value "G should be printed" output
+    output="$(log ERROR "H should be printed")"; value "H should be printed" output
+    reset_log_level
+    output="$(log FINE "I should not be printed")"; empty output
+    output="$(log FINER "J should not be printed")"; empty output
+    output="$(log INFO "K should be printed")"; value "K should be printed" output
+    log_level=65
+    output="$(log ERROR "L should be printed")"; value "L should be printed" output
+    output="$(log WARN "M should not be printed")"; empty output
+    output="$(log 65 "N should be printed")"; value "N should be printed" output
+    output="$(log 64 "O should not be printed")"; empty output
+}
+
+test_reset_log_level_log_vars() {
+    #
+    #before export log_level=INFO
+    foo_a="bar_a should be printed"
+    foo_b="bar_b should not be printed"
+    foo_c="bar_c should be printed"
+
+    grep --silent "foo_a: 'bar_a should be printed'" <<< "$(log_vars INFO foo_a)"
+    grep --silent "foo_b: 'bar_b should not be printed'" <<< "$(log_vars INFO foo_b)" || false
+    log_level=CONFIG
+    grep --silent "foo_c: 'bar_c should be printed'" <<< "$(log_vars CONFIG foo_c)"
+}
+
+test_invalid_numeric_log_level() {
+    #
+    #before export log_level=FINER
+    #before export log_display_level=false
+    #before export log_indent_enabled=false
+    value FINER effective_log_level_name
+    value 20 effective_log_level
+
+    output="$(log INFO "Message 1")"; value "Message 1" output
+    output="$(log FINEST "Message 2")"; empty output
+    # Invalid value should not change the log level
+    log_level=-10
+    output="$(log FINEST "Message 1")"; empty output
+    value FINER effective_log_level_name
+    value 20 effective_log_level
+}
+
+test_invalid_message_log_level() {
+    #
+    #before export log_level=INFO
+    #before export log_display_level=false
+
+    output="$(log IFNO "Message 1")"; empty output
+    grep --silent "No such log level: 'IFNO'" "${sa_test_stderr}"
+}
+
+# TODO: verify the output against a static file
+# TODO: correct indentation
+test_log_vars_full() {
+    #
+    #before export log_level=INFO
+    #before export log_display_level=false
+    #before export log_date_format=""
+
+    a="a value"
+    b="b value"
+    empty=""
+    declare -a array=( first second "third and fourth fifth" )
+    declare -Ag map=( [a]="a map value" [b]="b map value" )
+    map[c and d]="c and d value"
+    declare -a empty_array=()
+    declare -A empty_map=()
+
+    log_vars INFO "#Ordinary variables" a b empty undefined_var " " \
+             "#Arrays and maps" array map empty_array empty_map
+}
+
+test_adding_custom_log_levels() {
+    #
+    #before export log_level=FINEST
+    #before export log_align_level=false
+    #before export log_indent_enabled=false
+
+    _log_levels[TRACE]=5
+    output="$(log TRACE "Trace message")"; empty output
+    log_level=TRACE
+    output="$(log TRACE "Trace message")"; value "TRACE: Trace message" output
+}
+
+test_log_level_align_1() {
+    #
+    #before export log_level=CONFIG
+    #before export log_align_level=true
+
+    output="$(log INFO "My message.")"
+    value "  INFO: My message." output
+    output="$(log CONFIG "My config message.")"
+    value "CONFIG: My config message." output
+}
+
+test_log_level_align_2() {
+    #
+    #before export log_level=CONFIG
+    #before export log_align_level=false
+
+    output="$(log INFO "My message.")"
+    value "INFO: My message." output
+    output="$(log CONFIG "My config message.")"
+    value "CONFIG: My config message." output
+}
+
+test_log_placeholders() {
+    #
+    #before export log_level=INFO
+    #before export log_display_level=false
+    #before export log_date_format=""
+    output="$(log INFO "%s %%")"
+    value "%s %%" output
+    output="$(log INFO "%d%s" "10" " times")"
+    value "10 times" output
+}
+
+test_log_placeholders_newline() {
+    #
+    #before export log_level=INFO
+    #before export log_display_level=false
+    #before export log_date_format=""
+    output="$(log INFO "%s is %d years old" "Mary" "21"; echo "!")"
+    value "Mary is 21 years old!" output
+}
+
+test_log_dashes() {
+    #
+    #before export log_level=INFO
+    #before export log_display_level=false
+    #before export log_date_format=""
+    output="$(log INFO "-- (some dashes in front)")"
+    value "-- (some dashes in front)" output
+}
+
+# Logging 'log_level' variable should not change its value
+test_log_log_level() {
+    #
+    #before export log_level=INFO
+    log_vars INFO log_level
+    value "INFO" log_level
+}

@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+# -------------------------------- simpleargs --------------------------------
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+sa_parse "$0" \
+         -g/--greeting arg @default="Hello" \
+         --small-talk \
+         --weather sunny,cloudy,rainy,foggy,mysterious@default \
+         -f/--my-friend arg @@egrep "^[A-Z][a-z]+$" @varname=my_friends \
+         @multivalue: \
+         "[<person>]..." @default=World @@egrep "^[A-Z][a-z]+$" @varname=people
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------
+
+for person in "${people[@]}"
+do
+    echo "${greeting}, ${person}!"
+done
+case ${#my_friends[@]} in
+    0) echo "Today I'm utterly alone.";;
+    1) echo "Let me introduce my friend, ${my_friends[0]}." ;;
+    2) echo "Here are my friends, ${my_friends[0]} and ${my_friends[1]}." ;;
+    *) echo "Here are my ${#my_friends[@]} friends." ;;
+esac
+
+${small_talk} && echo "Such ${weather} weather, isn't it?"

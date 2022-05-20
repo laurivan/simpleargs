@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+sa_default_tokens=()
+
+# -------------------------------- simpleargs --------------------------------
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+sa_parse "$0" \
+         -h/--help @doc="Print usage instructions and exit." \
+         "<input>"
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------
+
+if ${help}
+then
+    sa_display_usage
+    exit 0
+fi
+# process ${input}

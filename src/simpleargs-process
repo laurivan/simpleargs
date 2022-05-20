@@ -1,0 +1,673 @@
+#!/usr/bin/env bash
+# simpleargs-process
+
+######### NOTE! ############
+# Care has to be taken with variable naming and conventions in the functions below that assign
+# global variables. The variable assignments that are made as a result of the user script
+# invocation might overwrite variables that are used internally by simpleargs functions.
+# For example, calling
+#   > my-script --mapname foobar
+# results in 'mapname' being (globally) assigned value "foobar". If 'mapname' is a variable
+# used internally by the processing function its value is replaced which will lead to hard-to-debug
+# errors. If the function does not do global variable assignments it's enough to declare
+# the internally used variables local (which one should normally do anyways not to litter
+# the environment). Note that simpleargs-common-util contains a set of helper functions for
+# assigning values to variables for which this note is also applicable.
+
+declare -a __sa_processing_queue=()
+
+sa_process() {
+    sa_tic_time $FUNCNAME
+
+    log CONFIG "---------- Processing arguments ----------"
+    # Declare variable on its own: 'local __sa_tmpargs=$(...)' will make the return code always 0
+    local tmpargs
+    tmpargs=$(getopt --options "${sa_getopt_short_options}" --longoptions "${sa_getopt_long_options}" -- "$@" 2>/dev/null)
+    local getopt_result=$?
+    if [ $getopt_result -ne 0 ]
+    then
+        local getopt_error_message=$(getopt --options "${sa_getopt_short_options}" --longoptions "${sa_getopt_long_options}" -- "$@" 2>&1 1>/dev/null)
+        log ERROR "Processing arguments failed: ${getopt_error_message#getopt: }"
+        return "${SA_PROCESS_GETOPT_FAILED}"
+    fi
+    log_vars FINE tmpargs
+
+    # Set rest parameters and handle them.
+    local tmp_leftover_args
+    eval "tmp_leftover_args=( ${tmpargs} )"
+    declare -ag __sa_processing_queue=( "${__sa_processing_queue[@]}" "${tmp_leftover_args[@]}" )
+    #log_vars ERROR __sa_processing_queue tmp_leftover_args tmpargs
+    unset tmp_leftover_args
+
+    local __sa_mapname
+    # Unset variables that are possibly set (and exported) upon script invocation
+    for __sa_mapname in "${sa_optionmaps[@]}" "${sa_parammaps[@]}"
+    do
+        declare -n current_entry="${__sa_mapname}"
+        [ ${current_entry[entrytype]} = "option" ] && unset -v ${current_entry[flagvars]}
+        [ ${current_entry[entrytype]} = "parameter" ] && unset -v ${current_entry[varname]}
+    done
+
+    log_vars FINEST __sa_processing_queue
+    # Check whether there are any options
+    plus_indent
+    while true
+    do
+        local __sa_flag="${__sa_processing_queue[0]}"
+        log FINER "- arg: '${__sa_flag}'"
+        # End of options
+        [ "$__sa_flag" = "--" ] && { unset __sa_processing_queue[0]; __sa_processing_queue=( "${__sa_processing_queue[@]}" ); break; }
+
+        log FINEST "Loading option map: '${sa_mapnames[${__sa_flag}]}'"
+        declare -n __sa_option=${sa_mapnames[${__sa_flag}]}
+        [ -n "${__sa_option[entrytype]}" ] || { log ERROR "Problem loading map for flag '${__sa_flag}'"; return "$SA_PROCESS_INTERNAL_ERROR"; }
+        #log_vars_in_map FINEST ${sa_mapnames[${__sa_flag}]}
+
+        __sa_option[on]=true
+        __sa_option[flaggiven]="${__sa_flag}" # Distinguish between the user using '-p' and '--port'
+        # Option repetition count, e.g. '-v' -> verbose, '-vv' -> more verbose
+        ((__sa_option[rep]++))
+        if [ "${__sa_option[allowrepeat]}" = true ]
+        then
+            local __sa_flagvar
+            for __sa_flagvar in ${__sa_option[flagvars]}
+            do
+                log FINER "Assigning option repetition count: ${__sa_flagvar}_count=${__sa_option[rep]}"
+                sa_assign "${__sa_option[rep]}" ${__sa_flagvar}_count || return "${SA_PROCESS_INTERNAL_ERROR}"
+            done
+        fi
+
+        case ${__sa_option[type]} in
+            novalue) # getopt type '' (empty)
+                # Deduce the value to be assigned
+                local __sa_value
+                if [ "${__sa_option[explicitonoffvalues]}" = "true" ]
+                then
+                    # An empty string if @onvalue has not been specified
+                    __sa_value="${__sa_option[onvalue]}"
+                else
+                    __sa_value=true # Default value for novalue options (onvalue and offvalue are null)
+                fi
+                sa_assign "${__sa_value}" ${__sa_option[flagvars]} || return "${SA_PROCESS_INTERNAL_ERROR}"
+
+                unset __sa_processing_queue[0]
+                __sa_processing_queue=( "${__sa_processing_queue[@]}" )
+                ;;
+            value) # getopt type ':'
+                local __sa_value="${__sa_processing_queue[1]}"
+                sa_assign "${__sa_value}" ${__sa_option[flagvars]} || return "${SA_PROCESS_INTERNAL_ERROR}"
+
+                unset __sa_processing_queue[0] __sa_processing_queue[1]
+                __sa_processing_queue=( "${__sa_processing_queue[@]}" )
+                ;;
+            optionalvalue) # getopt type '::'
+                local __sa_value="${__sa_processing_queue[1]}"
+                # NOTE! An empty value cannot be distinguished from no value provided at all.
+                # That is, providing an empty value will leave the variable undefined.
+                true && { sa_assign "${__sa_value}" ${__sa_option[flagvars]} || return "${SA_PROCESS_INTERNAL_ERROR}"; }
+
+                unset __sa_processing_queue[0] __sa_processing_queue[1]
+                __sa_processing_queue=( "${__sa_processing_queue[@]}" )
+                ;;
+            multivalue) # getopt type ':'
+                local __sa_value="${__sa_processing_queue[1]}"
+                sa_append_to_list "${__sa_value}" "${__sa_option[listseparator]}" ${__sa_option[flagvars]} || return "${SA_PROCESS_INTERNAL_ERROR}"
+
+                unset __sa_processing_queue[0] __sa_processing_queue[1]
+                __sa_processing_queue=( "${__sa_processing_queue[@]}" )
+                ;;
+#            *)
+#                # Should never be reached ('sa_finalize_option' sets the option type)
+#                log ERROR "Unknown option type: '${__sa_option[type]}' (${__sa_flag})"
+#                return 2
+#                ;;
+        esac
+
+        if [ -n "${__sa_option[afterprocessing]}" ]
+        then
+            log FINER "Executing 'after processing' hook: '${__sa_option[afterprocessing]}'"
+            eval "${__sa_option[afterprocessing]}"
+            local __sa_status=$?
+            if [ "${__sa_status}" -ne 0 ]
+            then
+                log ERROR "'afterprocessing' hook '${__sa_option[afterprocessing]}' failed (${__sa_status})"
+                return "${SA_PROCESS_HOOK_FAILURE}"
+            fi
+        fi
+    done
+
+    # Assign actual parameters: stop when there is either no more...
+    # - ...actual parameters (e.g. "data.txt")
+    # - ...formal parameters (e.g. "<input file>")
+    local __sa_parammap_index=0
+    while [ "${__sa_parammap_index}" -lt "${#sa_parammaps[*]}" ]
+    do
+        declare -n __sa_param="${sa_parammaps[${__sa_parammap_index}]}"
+        if [ ${#__sa_processing_queue[*]} -gt 0 ]
+        then
+            local __sa_param_value="${__sa_processing_queue[0]}"
+            unset __sa_processing_queue[0]
+            __sa_processing_queue=( "${__sa_processing_queue[@]}" )
+
+            __sa_param[on]=true
+            log FINER "Processing actual parameter '${__sa_param_value}' (formal parameter '${__sa_param[fullname]}')"
+            if ${__sa_param[varargs]}
+            then
+                log FINEST "(Formal) parameter is of type '${__sa_param[type]}' (varargs) and thus the last one: appending value"
+                sa_append_to_list "${__sa_param_value}" "" "${__sa_param[varname]}"
+            else
+                sa_assign "${__sa_param_value}" "${__sa_param[varname]}" || return "${SA_PROCESS_INTERNAL_ERROR}"
+                (( __sa_parammap_index++ ))
+                log FINEST "(Formal) parameter is of type '${__sa_param[type]}' (not varargs): moving to the next one (${__sa_parammap_index})"
+            fi
+        else
+            log FINER "No more actual parameters: stopping parameter assignments"
+            break
+        fi
+    done
+
+    # If there are formal parameters left check that they
+    # are optional and assign (possible) default values
+    while [ "${__sa_parammap_index}" -lt "${#sa_parammaps[*]}" ]
+    do
+        declare -n __sa_param="${sa_parammaps[${__sa_parammap_index}]}"; ((__sa_parammap_index++))
+        if ${__sa_param[on]}
+        then
+            log FINER "Parameter ${__sa_param[fullname]} already on (i.e. positional parameter assigned): skipping"
+        elif [ "${__sa_param[optional]}" = "true" ]
+        then
+            if [ -n "${__sa_param[default]}" ]
+            then
+                if [ "${__sa_param[varargs]}" = "true" ]
+                then
+                    log FINER "Assigning default (varargs) parameter value: ${__sa_param[varname]}=( '${__sa_param[default]}' )"
+                    sa_assign_list "${__sa_param[default]}" "" "${__sa_param[varname]}" || return "${SA_PROCESS_INTERNAL_ERROR}"
+                else
+                    log FINER "Assigning default parameter value: ${__sa_param[varname]}='${__sa_param[default]}'"
+                    sa_assign "${__sa_param[default]}" "${__sa_param[varname]}" || return "${SA_PROCESS_INTERNAL_ERROR}"
+                fi
+            else
+                if [ "${__sa_param[varargs]}" = "true" ]
+                then
+                    log FINER "(Varargs) parameter ${__sa_param[fullname]} does not have a default: creating an empty array"
+                    sa_assign_list "" "" "${__sa_param[varname]}" || return "${SA_PROCESS_INTERNAL_ERROR}"
+                else
+                    log FINER "Parameter ${__sa_param[fullname]} does not have a default: skipping default assignment"
+                fi
+            fi
+        else
+            log ERROR "Missing required parameter ${__sa_param[fullname]}"
+            return "${SA_PROCESS_INVALID_ARGUMENTS}"
+        fi
+    done
+
+    sa_assign_option_defaults || return
+    sa_validate_entries || return
+
+    # Store additional parameters so that the calling script can use
+    # "set -- ${sa_args}" to discard parameters consumed by simpleargs.
+    sa_args=""
+    local arg
+    for arg in "${__sa_processing_queue[@]}"
+    do
+        [ "${#sa_args}" -eq 0 ] && sa_args="$(printf %q "${arg}")" || sa_args="${sa_args} $(printf %q "${arg}")"
+    done
+    log FINER "Additional parameters (${#__sa_processing_queue[*]}): |${sa_args}|"
+    log CONFIG "Processing arguments finished successfully"
+    sa_toc_time ${FUNCNAME}; [ "${sa_benchmark}" = "true" ] && sa_print_toc_time ${FUNCNAME}
+    return 0
+}
+
+# Validates both options and parameters
+sa_validate_entries() {
+    sa_tic_time $FUNCNAME
+    log FINE "Validating options and parameters"
+    declare -a validation_errors=()
+    plus_indent
+    local mapname
+    for mapname in "${sa_optionmaps[@]}" "${sa_parammaps[@]}"
+    do
+        declare -n current_entry="${mapname}"
+
+        local entry_label var_name
+        if [ ${current_entry[entrytype]} = "option" ]
+        then
+            var_name="${current_entry[flagvars]%% *}"
+            entry_label="${current_entry[fullname]}"
+        elif [ ${current_entry[entrytype]} = "parameter" ]
+        then
+            var_name="${current_entry[varname]}"
+            entry_label="${current_entry[fullname]}"
+        fi
+
+        # Check for missing required options
+        if [ "${current_entry[required]}" = "true" ] && [ "${current_entry[on]}" != "true" ]
+        then
+            validation_errors+=("required option ${entry_label} not given")
+            continue
+        fi
+
+        if ${current_entry[on]} || [ -n "${current_entry[default]}" ]
+        then
+            if [ "${current_entry[type]}" = novalue ]
+            then
+                # novalue options are not validated: their default values 'true' or 'false' do not need
+                # validating nor do the values defined using @onvalue and @offvalue.
+                log FINER "${current_entry[entrytype]^} '${entry_label}': not validating novalue option"
+                continue
+            fi
+            sa_validate_entry "${var_name}" "${mapname}" "${entry_label}"
+            [ $? -eq "${SA_INCORRECT_USE}" ] && return "${SA_INCORRECT_USE}"
+        else
+            log FINER "${current_entry[entrytype]^} '${entry_label}' not given: not validating"
+        fi
+    done
+
+    if [ "${#validation_errors[*]}" -gt 0 ]
+    then
+        local validation_error
+        for validation_error in "${validation_errors[@]}"
+        do
+            log ERROR "${validation_error}"
+        done
+        sa_toc_time ${FUNCNAME}; [ "${sa_benchmark}" = "true" ] && sa_print_toc_time ${FUNCNAME}
+        return "${SA_PROCESS_VALIDATION_FAILED}"
+    fi
+
+    sa_toc_time ${FUNCNAME}; [ "${sa_benchmark}" = "true" ] && sa_print_toc_time ${FUNCNAME}
+    return 0
+}
+
+sa_validate_entry() {
+    local var_name="$1"
+    local mapname="$2"
+    local entry_label="$3"
+
+    declare -n current_entry="${mapname}"
+    declare -n var_value="${var_name}"
+    log FINER "${current_entry[entrytype]^} '${entry_label}': validating variable '${var_name}'..."
+    log FINEST "...with value: '${var_value}'" # Output (possibly sensitive) variable value using only FINEST log level.
+
+    # Check empty value
+    if [ "${current_entry[allowempty]}" = "true" ]
+    then
+        # Empty values are allowed -> If empty value is found skip the rest of the validation.
+        # This allows users to explicitly allow empty values without e.g. incorporating them
+        # in their regexp validation.
+        if [ -z "${var_value}" ]
+        then
+            log FINER "Empty values are allowed AND the value is empty -> skip validation"
+            return 0
+        fi
+    elif [ "${current_entry[type]}" = "optionalvalue" ]
+    then
+        # Empty values are always allowed for optionalvalue options since it's a common
+        # use case to provide the flag for optionalvalue option but no value.
+        log FINER "Empty values are allowed for ${current_entry[type]} options -> not checking"
+        if [ -z "${var_value}" ]
+        then
+            # TODO: revise: what if the empty value is given explicitly (by accident)
+            log FINER "Empty values are allowed AND the value is empty -> skip validation"
+            return 0
+        fi
+    else
+        # Empty values are not allowed -> If empty value is found skip the rest
+        # of the validation (empty values are not likely to pass other validation)
+        sa_validate_empty "${entry_label}" "${var_name}" ||
+            {
+                log FINER "Empty values are not allowed AND the value is empty -> skip other validation (after filing the error)"
+                return 0
+            }
+    fi
+
+    # Save the error count before validvalues validations. With @multivalue entries there can be
+    # multiple errors (one per each value). Later we need to clear those errors if the value is
+    # validated also using validation directives.
+    local error_count=${#validation_errors[@]}
+    # Check @validvalues, @validvaluesfile, and @validvaluescommand (if exist)
+    local valid_values_defined=false
+    local within_valid_values=false
+    if [ -n "${current_entry[validvaluesarray]}" ]
+    then
+        valid_values_defined=true
+        sa_validate_validvalues "${entry_label}" "${current_entry[validvaluesarray]}" "${var_name}" &&
+            within_valid_values=true
+    fi
+    if [ -n "${current_entry[validvaluesfile]}" ]
+    then
+        valid_values_defined=true
+        sa_validate_validvaluesfile "${entry_label}" "${current_entry[validvaluesfile]}" "${var_name}" &&
+            within_valid_values=true
+    fi
+    if [ -n "${current_entry[validvaluescommand]}" ]
+    then
+        valid_values_defined=true
+        sa_validate_validvaluescommand "${entry_label}" "${current_entry[validvaluescommand]}" "${var_name}" &&
+            within_valid_values=true
+    fi
+
+    # Check @@ validation directives (if exist)
+    if [ -z "${current_entry[validationarraynames]}" ]
+    then
+        # No validation directives: validation result dictated by whether value is within valid values
+        if ${valid_values_defined}
+        then
+            if ${within_valid_values}
+            then
+                log FINER "Entry '%s' within valid values\n" "${entry_label}"
+                return 0
+            else
+                log FINER "Entry '%s' not within valid values\n" "${entry_label}"
+                return 1
+            fi
+        else
+            # No validation directives and no valid values directives -> the value is valid
+            log FINER "Entry '%s' has no validation directives and no valid values defined\n" "${entry_label}"
+            return 0
+        fi
+    else
+        # Validation directives present
+        if ${valid_values_defined} && ${within_valid_values}
+        then
+            # Value within valid values: no need to check validation directives
+            log FINER "Entry '%s' within valid values, skipping other validation\n" "${entry_label}"
+            return 0
+        else
+            log FINER "Entry '%s' not within valid values: checking other validation\n" "${entry_label}"
+            if ${valid_values_defined}
+            then
+                # Clear the validation error inserted by sa_validate_validvalues[file|command]
+                while [ "${#validation_errors[@]}" -gt "${error_count}" ]
+                do
+                    unset validation_errors[${#validation_errors[@]}-1]
+                done
+            fi
+            sa_validate_validationarray "${var_name}" "${mapname}" "${entry_label}"
+            return
+        fi
+    fi
+    # Unreachable: return in every branch of the if-else above.
+}
+
+sa_validate_empty() {
+    local return_value=0
+    local entry="$1" # Option: flag given, Parameter: fullname
+    local var_name="$2"
+    declare -n var_value="${var_name}"
+    log FINEST "${entry}: Validating for empty values"
+    local given_value
+    # Note, "${var_value[@]}" works for arrays (expands to all values in the array)
+    # AND ordinary variables (expands to the single value)
+    plus_indent
+    for given_value in "${var_value[@]}"
+    do
+        log FINEST "Validating for empty value: '${given_value}'"
+        if [ -z "${given_value}" ]
+        then
+            log FINEST "Value empty: adding error"
+            validation_errors+=("${entry}: value is empty (use @allowempty to allow empty values)")
+            return_value=1
+        fi
+    done
+    minus_indent
+    return "${return_value}"
+}
+
+sa_validate_validationarray() {
+    local var_name="$1"
+    local mapname="$2"
+    local entry_label="$3"
+
+    declare -n current_entry="${mapname}"
+    declare -n var_value="${var_name}"
+
+    if [ -n "${current_entry[validationarraynames]}" ]
+    then
+        log FINER "Validating against validation array: '${entry_label}'"
+        local validation_array_name
+        for validation_array_name in ${current_entry[validationarraynames]}
+        do
+            sa_validate_command "${entry_label}" "${validation_array_name}" "${var_name}" "${sa_validation_command_modifiers[${validation_array_name}_negate]}"
+            local result=$?
+            if [ "${result}" -eq "${SA_INCORRECT_USE}" ]
+            then
+                return "${SA_INCORRECT_USE}"
+            elif [ "${result}" -ne 0 ] && [ "${_sa_short_circuit_validation}" = "true" ]
+            then
+                # Provide "short circuit" option to stop at the first failure. This can be
+                # used to speed up auto completion (which doesn't care about the other errors).
+                return ${result}
+            fi
+        done
+    fi
+}
+
+sa_validate_command() {
+    local return_value=0
+    local entry="$1" # Option: flag given, Parameter: fullname
+    local command_array_name="$2"
+    local var_name="$3"
+    local negate="$4" # 'true' or 'false'
+    declare -n var_value="${var_name}"
+
+    # Use sa_validate_${command[0]} if it exists: e.g. 'int' -> call 'sa_validate_int'
+    declare -n command=${command_array_name}
+    type "sa_validate_${command[0]}" >/dev/null 2>&1 && command[0]="sa_validate_${command[0]}"
+    log FINER "${entry}: Validating '${command_array_name}' (negate: ${negate})"
+    log_vars FINER ${command_array_name}
+
+    plus_indent
+    local given_value
+    # Note, "${var_value[@]}" works for arrays (expands to all values in the array)
+    # AND ordinary variables (expands to the single value)
+    for given_value in "${var_value[@]}"
+    do
+        log FINEST "Validating value: '${given_value}'"
+
+        if type "${command[0]}" >/dev/null 2>&1
+        then
+            "${command[@]}" "${given_value}"
+            local validation_result=$?
+            if [ "${validation_result}" -eq "${SA_INCORRECT_USE}" ]
+            then
+                log FINEST "Validation command (${command[0]}) returned ${SA_INCORRECT_USE} (incorrect usage)"
+                validation_errors=( "Incorrect usage of validation function: '${command[0]}'" )
+                return "${SA_INCORRECT_USE}"
+            fi
+
+            ${negate} && validation_result=$( [ ${validation_result} -eq 0 ] && echo 1 || echo 0)
+
+            if [ ${validation_result} -ne 0 ]
+            then
+                if [ "${_sa_dummy_validation_error_messages}" = "true" ]
+                then
+                    # Speed up execution when the error message is not needed
+                    # (for other than signaling a validation failure).
+                    validation_errors+=( "dummy error" )
+                else
+                    log FINEST "Validation failed (${validation_result})"
+                    local error_msg_generation_status
+                    unset sa_error_msg
+                    if ${negate}
+                    then
+                        sa_gen_negated_error_msg=true "${command[@]}" "${given_value}"
+                        error_msg_generation_status=$?
+                    else
+                        sa_gen_normal_error_msg=true "${command[@]}" "${given_value}"
+                        error_msg_generation_status=$?
+                    fi
+
+                    if [ "${error_msg_generation_status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
+                    then
+                        log FINEST "Using custom error message: '${sa_error_msg}'"
+                        validation_errors+=("${entry}: ${sa_error_msg}")
+                    else
+                        log FINEST "Using standard error message"
+                        validation_errors+=("${entry}: value '${given_value}' failed validation for $($negate && printf "(not) ")'${command[*]}'")
+                    fi
+                fi
+                return_value=1
+            fi
+        else
+            validation_errors+=("${entry}: No such validation command: '${command}'")
+            return_value=1
+            break
+        fi
+    done
+    minus_indent
+    return "${return_value}"
+}
+
+sa_validate_validvalues() {
+    local return_value=0
+    local entry="$1" # Option: flag given, Parameter: fullname
+    local validvalues_array_name="$2"
+    local var_name="$3"
+    declare -n var_value="${var_name}"
+    log FINEST "${entry}: Validating against valid values"
+    local given_value
+    # Note, "${var_value[@]}" works for arrays (expands to all values in the array)
+    # AND ordinary variables (expands to the single value)
+    for given_value in "${var_value[@]}"
+    do
+        log FINEST "Validating value: '${given_value}'"
+        if sa_transform_arrayvalue=envsubst sa_array_contains "${current_entry[validvaluesarray]}" "${given_value}"
+        then
+            true
+        else
+            declare -n validvalues_array="${current_entry[validvaluesarray]}"
+            local validvalues_string="$(sa_suffix="." sa_ellipsis_suffix="" sa_last_delim=" and " sa_enclose="'" sa_max_items="${sa_print_max_valid_values}" sa_max_length="${sa_print_max_valid_values_length}" sa_concatenate "${validvalues_array[@]}")"
+            validation_errors+=("${entry}: invalid value '${given_value}'"$'\n'"Valid values are: ${validvalues_string}")
+            return_value=1
+        fi
+    done
+    return "${return_value}"
+}
+
+sa_validate_validvaluesfile() {
+    local return_value=0
+    local entry="$1" # Option: flag given, Parameter: fullname
+    local validvalues_file_def="$2" # May contain environment variables or other constructs that need evaluation
+    local var_name="$3"
+    declare -n var_value="${var_name}"
+
+    local validvalues_file=$(envsubst <<< "${validvalues_file_def}")
+    if [ -r "${validvalues_file}" ]
+    then
+        log FINE "${entry}: Validating against valid values, file: '${validvalues_file}'"
+    else
+        validation_errors+=("${entry}: no such \"valid values file\" (or not readable) '${validvalues_file}'")
+        return 1
+    fi
+
+    local given_value
+    mapfile -t validvalues_array < "${validvalues_file}"
+    # Note, "${var_value[@]}" works for arrays (expands to all values in the array)
+    # AND ordinary variables (expands to the single value)
+    for given_value in "${var_value[@]}"
+    do
+        log FINEST "Validating value: '${given_value}'"
+        if sa_transform_arrayvalue=envsubst sa_array_contains validvalues_array "${given_value}"
+        then
+            true
+        else
+            local validvalues_string="$(sa_suffix="." sa_ellipsis_suffix="" sa_last_delim=" and " sa_enclose="'" sa_max_items="${sa_print_max_valid_values}" sa_max_length="${sa_print_max_valid_values_length}" sa_concatenate "${validvalues_array[@]}")"
+            validation_errors+=("${entry}: invalid value '${given_value}'"$'\n'"Valid values are: ${validvalues_string}")
+            return_value=1
+        fi
+    done
+    return "${return_value}"
+}
+
+sa_validate_validvaluescommand() {
+    local return_value=0
+    local entry="$1" # Option: flag given, Parameter: fullname
+    local validvalues_command="$2"
+    local var_name="$3"
+    declare -n var_value="${var_name}"
+
+    if eval "${validvalues_command}" >/dev/null 2>&1
+    then
+        log FINE "${entry}: Validating against valid values, command: '${validvalues_command}'"
+    else
+        validation_errors+=("${entry}: error executing \"valid values command\" '${validvalues_command}'")
+        return 1
+    fi
+
+    local given_value
+    mapfile -t validvalues_array < <(eval "${validvalues_command}")
+    # Note, "${var_value[@]}" works for arrays (expands to all values in the array)
+    # AND ordinary variables (expands to the single value)
+    for given_value in "${var_value[@]}"
+    do
+        log FINEST "Validating value: '${given_value}'"
+        if sa_transform_arrayvalue=envsubst sa_array_contains validvalues_array "${given_value}"
+        then
+            true
+        else
+            local validvalues_string="$(sa_suffix="." sa_ellipsis_suffix="" sa_last_delim=" and " sa_enclose="'" sa_max_items="${sa_print_max_valid_values}" sa_max_length="${sa_print_max_valid_values_length}" sa_concatenate "${validvalues_array[@]}")"
+            validation_errors+=("${entry}: invalid value '${given_value}'"$'\n'"Valid values are: ${validvalues_string}")
+            return_value=1
+        fi
+    done
+    return "${return_value}"
+}
+
+sa_assign_option_defaults() {
+    sa_tic_time $FUNCNAME
+    log FINE "Assigning option defaults"
+    plus_indent
+    local __sa_mapname
+    for __sa_mapname in "${sa_optionmaps[@]}"
+    do
+        declare -n __sa_option="${__sa_mapname}"
+        if [ -n "${__sa_option[default]}" ]
+        then
+            # A default value is defined -> provide default value as a variable
+            local __sa_flagvar
+            for __sa_flagvar in ${__sa_option[flagvars]}
+            do
+                declare -g "${__sa_flagvar}_default=${__sa_option[default]}"
+            done
+
+            if [ "${__sa_option[on]}" != "true" ]
+            then
+                # The option was not given -> check option type and assign
+                log FINER "Assigning default: '${__sa_option[fullname]}'"
+
+                if [ "${__sa_option[allowrepeat]}" = true ]
+                then
+                    local __sa_flagvar
+                    for __sa_flagvar in ${__sa_option[flagvars]}
+                    do
+                        sa_assign 0 ${__sa_flagvar}_count || return "${SA_PROCESS_INTERNAL_ERROR}"
+                    done
+                fi
+
+                local __sa_value
+                case "${__sa_option[type]}" in
+                    novalue)
+                        # Deduce the value to be assigned
+                        if [ "${__sa_option[explicitonoffvalues]}" = "true" ]
+                        then
+                            # An empty string if @offvalue has not been specified
+                            __sa_value="${__sa_option[offvalue]}"
+                        else
+                            __sa_value="${__sa_option[default]}" # 'false': Default value for novalue options (onvalue and offvalue are null)
+                        fi
+                        sa_transform_value=envsubst sa_assign "${__sa_value}" ${__sa_option[flagvars]} || return "${SA_PROCESS_INTERNAL_ERROR}"
+                        ;;
+                    value|optionalvalue)
+                        sa_transform_value=envsubst sa_assign "${__sa_option[default]}" ${__sa_option[flagvars]} || return "${SA_PROCESS_INTERNAL_ERROR}"
+                        ;;
+                    multivalue)
+                        sa_transform_value=envsubst sa_assign_list "${__sa_option[default]}" "${__sa_option[listseparator]}" ${__sa_option[flagvars]} || return "${SA_PROCESS_INTERNAL_ERROR}"
+                        ;;
+                esac
+            fi
+        fi
+    done
+    minus_indent
+    sa_toc_time ${FUNCNAME}; [ "${sa_benchmark}" = "true" ] && sa_print_toc_time ${FUNCNAME}
+    return 0
+}

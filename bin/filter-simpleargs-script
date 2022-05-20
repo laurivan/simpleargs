@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+
+sa_short_description="filter lines in script file"
+sa_long_description=(
+    "Takes a working script and filters out parts of it to produce something that is more usable as an example code snippet in the documentation. For example, a lengthy script preamble (common to every script) can be stripped off."
+    "Filtering is used to strip off lines that are not relevant to be shown in the documentation. The filtering is done by looping through the lines of the script and matching the lines with (regexp) rules. See -r/--rule option for more information."
+    "")
+
+# -------------------------------- simpleargs --------------------------------
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+
+sa_parse "$0" \
+         --print-line-no @doc="Prefix each output line with a line number. Note that the line number corresponds to the input file (not the output that is produced)." \
+         --trim-lines @doc="Remove leading whitespace from lines." \
+         --example @doc="Use a standard set of rules (overrides -r/--rule)." \
+         -r/--rule arg @multivalue @varname=rules \
+         @doc="Rules for turning the printing on and off." \
+         @doc="Initially printing is set to off. On each line the current rule is checked whether it matches the line. If it does the the printing status is toggled. One or more sed expressions to apply to the input file to produce the output." \
+         @doc="The rule can be a line number (0 and $ denote the first and last line respectively), a regular expression between / characters, or \"blank\" to match blank lines. By default the matching line is included in the output. Prefixing a rule with 'e' excludes the line from output. Examples: '0', '12', 'e12' '$' '/^sa_parse/', '//' (empty regex matches every line), 'blank'." \
+         --verbose @onvalue=INFO @offvalue=OFF \
+         @doc="Print debug messages about script's progress." \
+         "<input file>" @@file
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------
+
+log_level=${verbose}
+
+if ${example}
+then
+    log INFO "Using --example"
+    rules=( '/^sa_parse "\$0"/' 'e/^sa_end_parse/' 'e/^# -+$/')
+fi
+
+# rule:
+# - either a line number ($ denotes the last line)
+# - regexp in the form /<regexp>/ (e.g. /a.c/ matches "abc")
+# - "blank" matches a blank line
+match() {
+    local rule="$1"
+    local line="$2"
+    local line_no="$3"
+    log_vars INFO rule line line_no
+
+    if [[ "${rule}" =~ ^([0-9]+|\$)$ ]]
+    then
+        # Match by line number (numerical or $ for the last line)
+        [ "${line_no}" = "${rule}" ] && return 0
+        [ "${rule}" = '$' ] && [ "${line_no}" = "${#lines[@]}" ] && return 0
+        return 1
+    elif [[ "${rule}" =~ ^/.*/$ ]]
+    then
+        # Match by extended regexp pattern
+        log INFO pattern
+        local pattern="${rule:1:-1}" # Strip of leading and trailing slash
+        grep --silent -E -e "${pattern}" <<< "${line}" && return 0
+        return 1
+    elif [ "${rule}" = "blank" ]
+    then
+        # Match blank line
+        [ "${#line}" -eq 0 ] && return 0
+    fi
+    return 1
+}
+
+on=false
+mapfile -t lines < "${input_file}"
+for i in ${!lines[@]}
+do
+    include_match_line=true # Include the matching line by default
+    match=false
+    print_current_line=false
+
+    line="${lines[${i}]}"
+    line_no=$((i+1))
+    if [ ${#rules[@]} -gt 0 ]
+    then
+
+        rule="${rules[0]}"
+        if [ "${rule:0:1}" = "e" ]
+        then
+            # Exclude matching line if the rule is prefixed with 'e'
+            rule="${rule:1}"
+            include_match_line=false
+        fi
+
+        if match "${rule}" "${line}" "${line_no}"
+        then
+            # Match -> discard the rule and toggle output
+            log WARN "match"
+            match=true
+            unset rules[0]; rules=( "${rules[@]}" )
+            on=$( ${on} && echo "false" || echo "true" )
+        fi
+    fi
+
+    if ${match}
+    then
+        print_current_line=${include_match_line}
+    else
+        print_current_line=${on}
+    fi
+
+    if ${print_current_line}
+    then
+        ${print_line_no} && printf "%d: " "${line_no}"
+        if ${trim_lines}
+        then
+            line=$(sed -e 's/^[ \t]*//' <<< "${line}")
+        fi
+        printf "%s\n" "${line}"
+    fi
+done

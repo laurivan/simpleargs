@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Invocation: foo2bar output.txt input1.txt input2.txt ...
+output_file="$1"; shift
+> "${output_file}"
+for input_file in "$@"
+do
+    echo "--- File: ${input_file} ---" >> "${output_file}"
+    sed 's/foo/bar/g' "${input_file}" >> "${output_file}"
+done

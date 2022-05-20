@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" \
+             -u user @@egrep '^[a-z]+$' @@!egrep 'aaa' \
+             -g group @@egrep '^[a-z,]+$' @@!grep 'g$' \
+             --depth @@"int 14..18" @@non-existing-validation \
+             "<input>" @@grep '\.txt$' @@file,readable,notempty \
+             "[<output>]" @@grep '\.svg$' @@!exists
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_valid_input_and_output() {
+    # /tmp/sa-input-51316.txt /tmp/sa-non-existing-file.svg
+    #before echo 'only line' > /tmp/sa-input-51316.txt
+    #after rm /tmp/sa-input-51316.txt
+    value 0 source_result parse_result process_result
+    value /tmp/sa-input-51316.txt input
+    value /tmp/sa-non-existing-file.svg output
+    [ $# -eq 0 ]
+}
+
+test_valid_input() {
+    # /tmp/sa-input-51316.txt
+    #before echo 'only line' > /tmp/sa-input-51316.txt
+    #after rm /tmp/sa-input-51316.txt
+    value 0 source_result parse_result process_result
+    value /tmp/sa-input-51316.txt input
+    empty output
+    [ $# -eq 0 ]
+}
+
+test_valid_option() {
+    # -u jack /tmp/sa-input-51316.txt /tmp/sa-non-existing-file.svg
+    #before echo 'only line' > /tmp/sa-input-51316.txt
+    #after rm /tmp/sa-input-51316.txt
+    value 0 source_result parse_result process_result
+    value /tmp/sa-input-51316.txt input
+    value /tmp/sa-non-existing-file.svg output
+    value jack user
+    [ $# -eq 0 ]
+}
+
+test_invalid_option_1() {
+    # -u jaaack /tmp/sa-input-51316.txt /tmp/sa-non-existing-file.svg
+    #before echo 'only line' > /tmp/sa-input-51316.txt
+    #after rm /tmp/sa-input-51316.txt
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_invalid_option_2() {
+    # -u jack4 /tmp/sa-input-51316.txt /tmp/sa-non-existing-file.svg
+    #before echo 'only line' > /tmp/sa-input-51316.txt
+    #after rm /tmp/sa-input-51316.txt
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_invalid_input_suffix() {
+    # /tmp/sa-input-51316.text /tmp/sa-non-existing-file.svg
+    #before echo 'only line' > /tmp/sa-input-51316.text
+    #after rm /tmp/sa-input-51316.text
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_invalid_input_empty() {
+    # /tmp/sa-input-51316.txt /tmp/sa-non-existing-file.svg
+    #before touch /tmp/sa-input-51316.txt
+    #after rm /tmp/sa-input-51316.txt
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_invalid_input_not_readable() {
+    # /tmp/sa-input-51316.txt /tmp/sa-non-existing-file.svg
+    #before echo 'only line' > /tmp/sa-input-51316.txt
+    #before chmod a-r /tmp/sa-input-51316.txt
+    #after rm -f /tmp/sa-input-51316.txt
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_invalid_output_suffix() {
+    # /tmp/sa-input-51316.txt /tmp/sa-non-existing-file.jpg
+    #before echo 'only line' > /tmp/sa-input-51316.txt
+    #after rm /tmp/sa-input-51316.txt
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_invalid_output_exists() {
+    # /tmp/sa-input-51316.txt /tmp/sa-non-existing-file.svg
+    #before echo 'only line' > /tmp/sa-input-51316.txt
+    #before touch /tmp/sa-non-existing-file.svg
+    #after rm /tmp/sa-input-51316.txt
+    #after rm /tmp/sa-non-existing-file.svg
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_valid_custom_separator() {
+    # -g whe,el /tmp/sa-input-51316.txt
+    #before echo 'only line' > /tmp/sa-input-51316.txt
+    #after rm /tmp/sa-input-51316.txt
+    value 0 source_result parse_result process_result
+    value /tmp/sa-input-51316.txt input
+    value whe,el group
+    empty output
+    [ $# -eq 0 ]
+}
+
+test_invalid_custom_separator_1() {
+    # -u jack -g mygroupg /tmp/sa-input-51316.txt
+    #before echo 'only line' > /tmp/sa-input-51316.txt
+    #after rm /tmp/sa-input-51316.txt
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_invalid_custom_separator_2() {
+    # -u jack -g group2for /tmp/sa-input-51316.txt
+    #before echo 'only line' > /tmp/sa-input-51316.txt
+    #after rm /tmp/sa-input-51316.txt
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_non_existing_validation_function() {
+    # --depth 15 /tmp/sa-input-51316.txt /tmp/sa-non-existing-file.svg
+    #before echo 'only line' > /tmp/sa-input-51316.txt
+    #after rm /tmp/sa-input-51316.txt
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}

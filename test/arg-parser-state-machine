@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+
+export sa_use_cache=false
+sa_default_tokens=()
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] || { echo "ERROR: Failed to source simpleargs"; exit 1; }
+script_path="$0"
+
+test_valid_1() {
+    #
+    sa_parse "${script_path}"; parse_result="$?"
+    value 0 parse_result
+}
+
+test_valid_2() {
+    #
+    sa_parse "${script_path}" -h; parse_result="$?"
+    value 0 parse_result
+}
+test_valid_3() {
+    #
+    sa_parse "${script_path}" "<input file>"; parse_result="$?"
+    value 0 parse_result
+}
+
+test_invalid_option_after_end_of_options() {
+    #
+    sa_parse "${script_path}" -- -h || parse_result="$?"
+    value "${SA_PARSE_INVALID_ARGUMENTS}" parse_result
+}
+
+test_invalid_option_after_param() {
+    #
+    sa_parse "${script_path}" "<input>" -h || parse_result="$?"
+    value "${SA_PARSE_INVALID_ARGUMENTS}" parse_result
+}
+
+test_invalid_option_after_param_when_after_directive_1() {
+    #
+    sa_parse "${script_path}" "<input>" "@regexp=[a-z]+" -h || parse_result="$?"
+    value "${SA_PARSE_INVALID_ARGUMENTS}" parse_result
+}
+
+test_invalid_option_after_param_when_after_directive_2() {
+    #
+    sa_parse "${script_path}" "<input>..." "@doc=Input file" -h || parse_result="$?"
+    value "${SA_PARSE_INVALID_ARGUMENTS}" parse_result
+}
+
+test_invalid_param_after_varoptionalparam() {
+    #
+    sa_parse "${script_path}" "[<input>]..." "@doc=Input file" "<output>" || parse_result="$?"
+    value "${SA_PARSE_INVALID_ARGUMENTS}" parse_result
+}

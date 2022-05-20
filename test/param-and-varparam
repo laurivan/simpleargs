@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" "<input>" \
+             "<operations>..." @validvalues=add,subtract,multiply,divide
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_no_args() {
+    #
+    value 0 source_result parse_result
+    value "${SA_PROCESS_INVALID_ARGUMENTS}" process_result
+}
+
+test_one_arg() {
+    # "first param"
+    value 0 source_result parse_result
+    value "${SA_PROCESS_INVALID_ARGUMENTS}" process_result
+}
+
+test_two_args() {
+    # input.txt add
+    value 0 source_result parse_result process_result
+    value "input.txt" input
+    arrayvalue operations add
+    [ $# -eq 0 ]
+}
+
+test_three_args() {
+    # input.txt add subtract add
+    value 0 source_result parse_result process_result
+    value "input.txt" input
+    arrayvalue operations add subtract add
+    [ $# -eq 0 ]
+}
+
+test_validation() {
+    # input.txt add subtract multiply divied
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}

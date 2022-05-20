@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+capitalized() {
+    if [ "$#" -ne 1 ]
+    then
+        echo "${FUNCNAME}: incorrect number ($#) of parameters (should be 1)" >&2
+        return "${SA_INCORRECT_USE}"
+    fi
+    local value="$1"
+
+    if [ "${sa_gen_normal_error_msg}" = "true" ]
+    then
+       sa_error_msg="Value should start with a capital letter: '${value}'"
+       return "${SA_GENERATED_ERROR_MSG_STATUS}"
+    fi
+    if [ "${sa_gen_negated_error_msg}" = "true" ]
+    then
+        sa_error_msg="Value should not start with a capital letter: '${value}'"
+        return "${SA_GENERATED_ERROR_MSG_STATUS}"
+    fi
+
+    grep -q -e "^[A-Z]" <<< "${value}"
+}
+
+# -------------------------------- simpleargs --------------------------------
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+sa_parse "$0" \
+         --capitalized arg @@capitalized \
+         --non-capitalized arg '@@!capitalized'
+
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------
+echo "    Capitalized: ${capitalized}"
+echo "Non-capitalized: ${non_capitalized}"

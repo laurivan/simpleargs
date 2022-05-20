@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+
+sa_display_usage_on_process_failure=${sa_display_usage_on_process_failure:-true}
+
+dice() {
+    grep --quiet "^[1-6]$" <<< "${_value}"
+}
+
+port() {
+    [ "$_value" -ge 1 ] && [ "$_value" -le 65535 ]
+}
+
+sa_short_description="demonstrates simpleargs capabilities"
+sa_long_description=("This script is used to demonstrate various capabilities of simpleargs library. One can use this script as a template for new scripts." \
+                     "This is another paragraph for this manual page.")
+
+# -------------------------------- simpleargs --------------------------------
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+sa_parse "$0" \
+         -u/--upload \
+         @doc="Upload binary onto AVR chip." \
+         @doc="Second paragraph" \
+         @doc="Third paragraph" \
+         -p/--part/--mc atmega328p@default,attiny85,promini @varname=avrpart \
+         @doc="AVR chip type." \
+         -b/--baudrate 9600,57600@default,115200 \
+         @doc="Baudrate for serial communication. Default: @{d}. @{v}" \
+         --password password @optionalvalue \
+         @doc="Password to be used. This is the main password for the system.@endshortdoc@ Other passwords cannot be used." \
+         @doc="Password should contain letters, numbers and special chacters. Password should be over 8 characters long." \
+         --pass @@egrep "^[0-9]+$" \
+         @doc="Passcode for the login. Consists of numbers only." \
+         @doc="Print usage instructions." \
+         --dice-number-point @@dice \
+         @doc="Dice number." \
+         @doc="Lorem ipsum." \
+         --port @@port \
+         @@@ @doc="HTTP port that is used by the client." \
+         --point point @:/validvalues="0,0:1,1@default:4,3" \
+         @@@ @doc="Coordinates of the treasure." \
+         @@@ @doc="Note that the coordinates are encrypted." \
+         --file log.txt,log.out,debug.out @@exists \
+         -a/--ages @@int 18..50 @,/multivalue \
+         @doc="List of ages separated by comma." \
+         --mp3 @onvalue="-audiocodec mp3" \
+         @doc="Use mp3 compression for audio." \
+         --x264 @onvalue="-videocodec x264" \
+         @doc="Use x264 compression for video."\
+         -n 'james dean,jeff dean,james maverick,hey$ and|{ your.' \
+         -- \
+         "<input file>" @@file,exists \
+         @@@ @doc="Positional arguments need documentation (and validation) as well" \
+         @@@ @doc="They might need multiple paragraphs as well." \
+         "<output file>" @@!exists @varname=output \
+         @@@ @doc="First output file" \
+         "<output file>" \
+         @@@ @doc="Second output file (should produce an error)" \
+         "[<optional file>]" \
+         @@@ @doc="Optional file that can be used as the log file."
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------
+
+#sa_debug_dump "WARN"; exit 0
+
+#sa_dump_option_attributes INFO
+#sa_dump_validation INFO
+#sa_dump_getopt_strings INFO
+#sa_debug_dump INFO
+#sa_dump_params INFO
+#sa_dump_param_attributes INFO
+
+#log_vars INFO "# Flags" u upload p part avrpart b baudrate password pass h dice_number_point port point file a ages mp3 x264
+${h} && sa_display_usage
+exit 0
+log_vars INFO "# Params" input_file output output_file optional_file
+
+log_vars INFO "# Options" u upload p part port ages
+log INFO "Rep count (ages): ${sa_option_a__ages[rep]}"
+log INFO "Rep count (h): ${sa_option_h[rep]}"
+
+log INFO "$# arguments left:"
+i=1
+for arg in "$@"
+do
+    log INFO "\$${i}: '${arg}'"
+    ((i++))
+done

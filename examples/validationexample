@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+# -------------------------------- simpleargs --------------------------------
+sa_source="${SIMPLEARGS}"
+. "${sa_source}" || { echo "Error loading '${sa_source}'" >&2; exit 1; }
+sa_parse "$0" \
+    -p/--part atmega328p@default,attiny85,promini \
+    -b/--baudrate 9600,57600,115200 @default=57600 \
+    --pass @@egrep '^[0-9]+$' @default=46080 \
+    --point piste @:/validvalues="0,0:1,1@default:4,3" \
+    -a/--ages @@int 1..50 @,/multivalue @default=2,3,11 \
+    -d/--dogs @:/validvalues="Wuf:Jack:Emperor:Tim:Tom" @+/multivalue "@default=Tim+Jack" \
+    -c/--cats @validvalues=Garfield,Elmer,Pinky @:/multivalue @default=Pinky \
+    -s/--sort/--order @validvalues=none,"yes no",size,time,version,name@default @optionalvalue \
+    -e/--pattern pattern @multivalue @validvalues=left,right,up,down \
+    -o/--operations sanitize,validate,compile,package @,/multivalue \
+    -v -g -t \
+    "<input>" @@grep '.*\.mp4$' \
+    "<input2>" \
+    "<input3>..." @validvalues=table,tablet,task,turd
+
+#    "<input2>" "[foobar,file,!file,!notempty,!readable,writable,readable,executable,!modified]" \
+
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------
+
+log_level=INFO
+log_vars INFO part baudrate pass piste ages dogs cats sort pattern operations input input2 input3

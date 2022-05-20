@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" \
+             -u/--user @validvaluescommand='cat ${SA_TEST_RESOURCES}/etc-passwd | cut -d: -f1; echo ${USER}' \
+             --fruit @validvaluescommand='non-existing-command-12' \
+             --new-user @validvaluescommand='cat ${SA_TEST_RESOURCES}/etc-passwd | cut -d: -f1' @@egrep '^[a-z_][a-z0-9_]{0,39}$'
+
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_valid_me() {
+    # -u $(whoami)
+    value 0 source_result parse_result process_result
+    value $(whoami) u user
+    [ $# -eq 0 ]
+}
+
+test_valid_root() {
+    # -u $(whoami)
+    value 0 source_result parse_result process_result
+    value $(whoami) u user
+    [ $# -eq 0 ]
+}
+
+test_invalid_non_existing_user() {
+    # -u non-existing-user
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_invalid_empty() {
+    # -u ""
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_non_existing_command() {
+    # --fruit orange
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_with_regexp_old_valid_value() {
+    # --new-user $(whoami)
+    value 0 source_result parse_result process_result
+    value $(whoami) new_user
+    [ $# -eq 0 ]
+}
+
+test_with_regexp_invalid_value() {
+    # --new-user Jack
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_with_regexp_new_valid_value() {
+    # --new-user mynewuser
+    value 0 source_result parse_result process_result
+    value mynewuser new_user
+    [ $# -eq 0 ]
+}
+
+test_invalid_user_error_printout() {
+    # --user Nobody
+    #before export log_indent_enabled=false log_display_level=false
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+    diff "${sa_test_stdout}" - <<EOF
+-u/--user: invalid value 'Nobody'
+Valid values are: 'root', 'daemon', 'bin', 'sys', 'sync', 'games', 'man', 'lp', 'mail', 'news', 'uucp', 'proxy', 'www-data', 'backup', 'list', 'irc', 'gnats', 'nobody', 'syslog', 'messagebus', 'usbmux', 'dnsmasq', 'avahi-autoipd', 'kernoops', 'rtkit', 'saned', 'whoopsie', 'speech-dispatcher', 'avahi', 'lightdm', 'colord', 'hplip', 'pulse', 'sshd', 'couchbase', 'postgres', 'keystone', 'openldap', 'turilas', 'uml-net', 'libvirt-qemu', 'libvirt-dnsmasq', 'systemd-timesync', 'systemd-network', 'systemd-resolve', 'systemd-bus-proxy', 'uuidd', '_apt', 'epmd', 'geoclue', 'influxdb', 'telegraf', 'grafana', 'flowoneapi', 'elasticsearch' and '${USER}'.
+EOF
+}
+
+test_invalid_user_error_printout_max_values() {
+    # --user Nobody
+    #before export log_indent_enabled=false log_display_level=false
+    #before export sa_print_max_valid_values=10
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+    diff "${sa_test_stdout}" - <<EOF
+-u/--user: invalid value 'Nobody'
+Valid values are: 'root', 'daemon', 'bin', 'sys', 'sync', 'games', 'man', 'lp', 'mail', 'news',...
+EOF
+}
+
+test_invalid_user_error_printout_max_values_length() {
+    # --user Nobody
+    #before export log_indent_enabled=false log_display_level=false
+    #before export sa_print_max_valid_values_length=100 sa_print_max_valid_values=20
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+    diff "${sa_test_stdout}" - <<EOF
+-u/--user: invalid value 'Nobody'
+Valid values are: 'root', 'daemon', 'bin', 'sys', 'sync', 'games', 'man', 'lp', 'mail', 'news', 'uucp', 'proxy',...
+EOF
+}

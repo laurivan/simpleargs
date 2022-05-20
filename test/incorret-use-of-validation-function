@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" \
+             --name arg @@grep # Missing pattern
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_incorrect_use_of_validation_function() {
+    # --name Jenna
+    value 0 source_result parse_result
+    value "${SA_INCORRECT_USE}" process_result
+}

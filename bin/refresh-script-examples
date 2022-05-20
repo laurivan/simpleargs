@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+
+sa_short_description="replace shell script examples in Markdown file"
+sa_long_description=(
+"This script searches for specific markers in Markdown files, parses the markers and executes the commands within the markers. This allows Markdown files to contain code snippets and sample outputs of those snippets that can be automatically refreshed when there are changes."
+)
+
+# -------------------------------- simpleargs --------------------------------
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+
+sa_parse "$0" \
+         --start arg @@int 1.. @default=1 \
+         @doc="The line number from where to start (default: @{d})" \
+         --end arg @@int 0.. @default=0 \
+         @doc="The line number where to stop. The(default (@{d}) means the last line of the file." \
+         --dry-run  @doc="Don't actually modify the input file." \
+         "<input file>..." @varname=input_files @@glob "*.md" @@file \
+         @doc="Input Markdown files to process"
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------
+tmp_file=$(mktemp --tmpdir refresh-shell-examples.XXX)
+
+log_level=INFO
+log_vars INFO input_files tmp_file
+
+awk_script='
+{
+    if (NR >= start_line) {
+       if ( $0 ~ pattern ) {
+          printf "%d:%s\n", NR, $0
+          exit
+       }
+    }
+}
+'
+
+for input_file in "${input_files[@]}"
+do
+    log INFO "Processing: ${input_file}"
+    pattern="^ *<!--@([a-z][a-z-]*)? .* -->$"
+
+    current_start_line=${start}
+    line=$(awk -v start_line="${current_start_line}" -v pattern="${pattern}" "${awk_script}" "${input_file}")
+    while [ -n "${line}" ]
+    do
+        line_no=$(sed -E 's/^([0-9]+):.*/\1/' <<< "${line}")
+        [ ${end} -gt 0 ] && [ ${line_no} -ge ${end} ] && break
+
+        indent=$(sed -E 's/^[0-9]+:( *)<!--@([a-z][a-z-]*)? (.*) -->/\1/' <<< "${line}")
+          oper=$(sed -E 's/^[0-9]+:( *)<!--@([a-z][a-z-]*)? (.*) -->/\2/' <<< "${line}")
+           cmd=$(sed -E 's/^[0-9]+:( *)<!--@([a-z][a-z-]*)? (.*) -->/\3/' <<< "${line}")
+
+        log_vars INFO line line_no indent oper cmd " "
+
+        if ${dry_run}
+        then
+            :
+        else
+            case "${oper}" in
+                "eval")
+                    echo "${indent}"'```' > "${tmp_file}"
+                    eval "${cmd}" | sed "s/^/${indent}/" | sed 's/^ *$//' >> "${tmp_file}"
+                    echo "${indent}"'```' >> "${tmp_file}"
+                ;;
+                "evalsh")
+                    echo "${indent}"'```sh' > "${tmp_file}"
+                    eval "${cmd}" | sed "s/^/${indent}/" | sed 's/^ *$//'  >> "${tmp_file}"
+                    echo "${indent}"'```' >> "${tmp_file}"
+                ;;
+                "evalonly")
+                    eval "${cmd}"
+                ;;
+                *)
+                    log ERROR "Invalid operation '${oper}' (${input_file}:${line_no})"
+                    exit 1
+                ;;
+            esac
+
+            if [ "${oper}" != "evalonly" ]
+            then
+                sed -Ei $((line_no+1))',/^ *```$/ d' "${input_file}"
+                sed -Ei "$((line_no))r ${tmp_file}" "${input_file}"
+            fi
+        fi
+
+        current_start_line=$((line_no + 1))
+        line=$(awk -v start_line="${current_start_line}" -v pattern="${pattern}" "${awk_script}" "${input_file}")
+    done
+done
+
+rm "${tmp_file}"
+
+exit 0

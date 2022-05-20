@@ -1,0 +1,160 @@
+#!/usr/bin/env bash
+
+. ../target/simpleargs-bundle; source_result=$?
+
+###########################################
+
+test_success() {
+    # first second
+    #clearcache
+    [ "$source_result" -eq 0 ] && sa_parse "$0"; parse_result=$?
+    sa_end_parse ${parse_result}
+    [ "$parse_result" -eq 0 ] && sa_process "$@"; process_result=$?
+    sa_end_process $process_result
+    eval "set -- ${sa_args}"
+
+    value 0 source_result parse_result process_result
+    [ $# -eq 2 ]
+    [ "$1" = first ]
+    [ "$2" = second ]
+}
+
+test_parse_failure() {
+    # first second
+    #clearcache
+    [ "$source_result" -eq 0 ] && sa_parse "$0" ---p || parse_result=$?
+    ( sa_end_parse ${parse_result} ) || sa_end_parse_result=$?
+    value "${SA_PARSE_INVALID_ARGUMENTS}" sa_end_parse_result parse_result
+}
+
+test_parse_failure_no_exit() {
+    # first second
+    #clearcache
+    #before export sa_exit_on_parse_failure=false
+    [ "$source_result" -eq 0 ] && sa_parse "$0" ---p || parse_result=$?
+    sa_end_parse ${parse_result} || sa_end_parse_result=$?
+    value "${SA_PARSE_INVALID_ARGUMENTS}" sa_end_parse_result parse_result
+}
+
+test_parse_failure_missing_backslash() {
+    # first second
+    #clearcache
+    [ "$source_result" -eq 0 ] &&
+        sa_parse "$0" -p port \
+                 -u user
+                 -g group || parse_result=$?
+    ( sa_end_parse ${parse_result} ) || sa_end_parse_result=$?
+    # 127 ~ command not found
+    value 127 sa_end_parse_result parse_result
+}
+
+test_parse_failure_trailing_whitespace() {
+    # first second
+    #clearcache
+    [ "$source_result" -eq 0 ] &&
+        sa_parse "$0" -p port \
+                 -u user \ || parse_result=$?
+    ( sa_end_parse ${parse_result} ) || sa_end_parse_result=$?
+    value "${SA_PARSE_INVALID_ARGUMENTS}" sa_end_parse_result parse_result
+}
+
+test_sa_end_parse_misuse() {
+    # first second
+    #clearcache
+    [ "$source_result" -eq 0 ] && sa_parse "$0" -p; parse_result=$?
+    ( sa_end_parse ) || sa_end_parse_result=$?
+    value 0 parse_result
+    value 1 sa_end_parse_result
+}
+
+test_process_failure() {
+    # --non-existing-flag
+    #clearcache
+    [ "$source_result" -eq 0 ] && sa_parse "$0"; parse_result=$?
+    sa_end_parse ${parse_result}
+    [ "$parse_result" -eq 0 ] && sa_process "$@" || process_result=$?
+    ( sa_end_process $process_result ) || sa_end_process_result=$?
+
+    value 0 source_result parse_result
+    value "${SA_PROCESS_GETOPT_FAILED}" sa_end_process_result process_result
+}
+
+test_process_failure_no_exit() {
+    # --non-existing-flag
+    #clearcache
+    #before export sa_exit_on_process_failure=false
+    [ "$source_result" -eq 0 ] && sa_parse "$0"; parse_result=$?
+    sa_end_parse ${parse_result}
+    [ "$parse_result" -eq 0 ] && sa_process "$@" || process_result=$?
+    sa_end_process $process_result || sa_end_process_result=$?
+
+    value 0 source_result parse_result
+    value "${SA_PROCESS_GETOPT_FAILED}" sa_end_process_result process_result
+}
+
+test_process_failure_action_none() {
+    # --non-existing-flag
+    #clearcache
+    #before export sa_process_failure_action=none
+    [ "$source_result" -eq 0 ] && sa_parse "$0" -p port; parse_result=$?
+    sa_end_parse ${parse_result}
+    [ "$parse_result" -eq 0 ] && sa_process "$@" || process_result=$?
+    ( sa_end_process $process_result ) || sa_end_process_result=$?
+
+    value 0 source_result parse_result
+    value "${SA_PROCESS_GETOPT_FAILED}" sa_end_process_result process_result
+    grep --silent -e "Usage: $(basename "$0")" "${sa_test_stderr}" && false
+    grep --silent -e "-p ARG" "${sa_test_stderr}" && false
+}
+
+test_process_failure_action_display_usage() {
+    # --non-existing-flag
+    #clearcache
+    #before export sa_process_failure_action=display-usage
+    [ "$source_result" -eq 0 ] && sa_parse "$0" -p port; parse_result=$?
+    sa_end_parse ${parse_result}
+    [ "$parse_result" -eq 0 ] && sa_process "$@" || process_result=$?
+    ( sa_end_process $process_result ) || sa_end_process_result=$?
+
+    value 0 source_result parse_result
+    value "${SA_PROCESS_GETOPT_FAILED}" sa_end_process_result process_result
+    grep --silent -e "Usage: $(basename "$0")" "${sa_test_stderr}"
+    grep --silent -e "-p ARG" "${sa_test_stderr}"
+}
+
+test_process_failure_action_display_synopsis() {
+    # --non-existing-flag
+    #clearcache
+    #before export sa_process_failure_action=display-synopsis
+    [ "$source_result" -eq 0 ] && sa_parse "$0" -p port; parse_result=$?
+    sa_end_parse ${parse_result}
+    [ "$parse_result" -eq 0 ] && sa_process "$@" || process_result=$?
+    ( sa_end_process $process_result ) || sa_end_process_result=$?
+
+    value 0 source_result parse_result
+    value "${SA_PROCESS_GETOPT_FAILED}" sa_end_process_result process_result
+    grep --silent -e "Usage: $(basename "$0")" "${sa_test_stderr}"
+    grep --silent -e "-p ARG" "${sa_test_stderr}" && false
+}
+
+test_sa_end_process_misuse() {
+    # first second
+    #clearcache
+    [ "$source_result" -eq 0 ] && sa_parse "$0"; parse_result=$?
+    sa_end_parse ${parse_result}
+    [ "$parse_result" -eq 0 ] && sa_process "$@"; process_result=$?
+    echo "process_result: '$process_result'"
+    ( sa_end_process ) || sa_end_process_result=$?
+
+    value 0 source_result parse_result process_result
+    value 1 sa_end_process_result
+}
+
+test_parse_only() {
+    # first second
+    #clearcache
+    #before export sa_parse_only=true
+    [ "$source_result" -eq 0 ] && sa_parse "$0"; parse_result=$?
+    sa_end_parse ${parse_result}
+    [ -z "sa_end_parse should have exited the script" ]
+}

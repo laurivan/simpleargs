@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+
+sa-print-functions-in-file() {
+    local file="$1"; shift
+    [ -f "${file}" ] || { echo "No such file: '${file}'"; return 1; }
+
+    local function_name
+    for function_name in "$@"
+    do
+        grep --silent "^${function_name}() {" "${file}" ||
+            { echo "No such function: '${function_name}'"; return 1; }
+        sed -r -n "/^${function_name}\(\) \{$/,/^}$/p" "${file}" ||
+            { echo "Running sed failed for function: '${function_name}'"; return 1; }
+    done
+}
+
+sa-insert-file() {
+    local src_file="$1"
+    local dest_file="$2"
+    local token="$3"
+    # Search dest_file for token and replace the line that contains the token with the src_file contents
+
+    [ -f "${src_file}" ] || { echo "ERROR: No such src file: '${src_file}'"; return 1; }
+    [ -f "${dest_file}" ] || { echo "ERROR: No such dest file: '${dest_file}'"; return 1; }
+    sed -i -e "/${token}/r ${src_file}" "${dest_file}" -e "/${token}/d" "${dest_file}"
+}
+
+sa-insert-string() {
+    local dest_file="$1"
+    local token="$2"
+    local string="$3"
+    # Search dest_file for token and replace the token with the input string
+
+    [ -f "${dest_file}" ] || { echo "ERROR: No such dest file: '${dest_file}'"; return 1; }
+    sed -i -e "s%${token}%${string}%g" "${dest_file}"
+}
+
+# ---------------------------------------------------------------------------- #
+[ -f src/simpleargs-main ] && [ -f docs/command-completion.md ] || { echo "This doesn't seem to be simpleargs project" >&2; exit 1; }
+
+bundlesourcefiles="benchmark simpleargs-main simpleargs-constants log simpleargs-common-util simpleargs-parsing simpleargs-process simpleargs-util simpleargs-validation-functions simpleargs-manpage simpleargs-usage-printout simpleargs-install-utils"
+sourcefiles="${bundlesourcefiles} simpleargs-test-utils simpleargs-dev-utils simpleargs-general-completion"
+
+simpleargs_bundle=target/simpleargs-bundle
+simpleargs_completion_runtime=target/simpleargs-completion-runtime
+
+# If you want "continuous" build, use
+# > build_runs_left=-1 bin/build
+build_runs_left=${build_runs_left:-1}
+while [ "${build_runs_left}" -ne 0 ]
+do
+    ((build_runs_left--))
+    build_needed=false
+    for sourcefile in ${sourcefiles} simpleargs.rc
+    do
+        if [ ! -f "${simpleargs_bundle}" ] || [ "src/${sourcefile}" -nt "${simpleargs_bundle}" ]
+        then
+            build_needed=true
+            echo
+            echo "$(date +%H:%M:%S)"
+            break
+        fi
+    done
+
+    if ${build_needed}
+    then
+        [ -d target ] || { mkdir target; }
+        echo "Generating simpleargs-bundle"
+        git diff --quiet --exit-code && git diff --quiet --exit-code --staged ||
+                echo "### WARNING! The working directory is dirty! ###"
+
+        commit_time=$(TZ=UTC0 git show --quiet --date='format-local:%Y-%m-%d %H:%M:%S %Z' --format="%cd")
+        commit_hash=$(git rev-parse --short HEAD)
+        version_tag=$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$')
+        version_string="simpleargs ${version_tag:+${version_tag} }build ${commit_hash} (${commit_time})"
+        echo "Labeling bundle: '${version_string}'"
+        echo '#!/usr/bin/env bash' > "${simpleargs_bundle}"
+        echo "sa_version=\"${version_tag:-unknown}\"" >> "${simpleargs_bundle}"
+        echo "sa_version_string=\"${version_string}\"" >> "${simpleargs_bundle}"
+        echo "sa_version_hash=\"${commit_hash}\"" >> "${simpleargs_bundle}"
+        {
+            for sourcefile in $bundlesourcefiles
+            do
+                echo
+                echo "#----- ${sourcefile} -----#"
+                cat "src/${sourcefile}"
+            done
+        } >> "${simpleargs_bundle}"
+
+        echo "Inserting simpleargs.rc"
+        sa-insert-file src/simpleargs.rc "${simpleargs_bundle}" "# sa-generate-rc file placeholder #" || exit 1
+
+        echo "Generating simpleargs-completion-runtime"
+        echo '#!/usr/bin/env bash' > "${simpleargs_completion_runtime}"
+        {
+            echo
+            cat src/simpleargs-constants
+            echo
+            cat src/simpleargs-general-completion
+            echo
+            sa-print-functions-in-file src/simpleargs-process sa_validate_validationarray sa_validate_command
+            echo
+            cat src/simpleargs-validation-functions
+            echo
+            cat src/benchmark
+        } >> "${simpleargs_completion_runtime}"
+
+        echo "Inserting simpleargs_completion_runtime"
+        sa-insert-file target/simpleargs-completion-runtime "${simpleargs_bundle}" "# sa-generate-completion-runtime file placeholder #"
+
+        echo "Inserting simpleargs sourcing benchmark toc"
+        {
+            echo 'sa_toc_time "sourcing_simpleargs"; [ "${sa_benchmark}" = "true" ] && sa_print_toc_time "sourcing_simpleargs"'
+            echo ': # Return 0'
+        } >> "${simpleargs_bundle}"
+    fi
+
+    sleep 1
+done

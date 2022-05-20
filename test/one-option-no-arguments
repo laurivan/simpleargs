@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" -p; parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_no_arguments() {
+    #
+    value 0 source_result parse_result process_result
+    value false p
+    [ $# -eq 0 ]
+}
+
+test_one_positional_argument() {
+    # first
+    value 0 source_result parse_result process_result
+    value false p
+    [ $# -eq 1 ]
+    [ "$1" = first ]
+    [ -z "$2" ]
+}
+
+test_option() {
+    # -p
+    value 0 source_result parse_result process_result
+    value true p
+    [ $# -eq 0 ]
+}
+
+test_option_and_argument() {
+    # -p "only argument"
+    value 0 source_result parse_result process_result
+    value true p
+    [ $# -eq 1 ]
+    [ "$1" = "only argument" ]
+}
+
+test_option_last() {
+    # first second third -p
+    value 0 source_result parse_result process_result
+    value true p
+    [ $# -eq 3 ]
+    [ "$1" = first ]
+    [ "$2" = second ]
+    [ "$3" = third ]
+    [ -z "$4" ]
+}
+
+test_option_in_the_middle() {
+    # first -p "second option"
+    value 0 source_result parse_result process_result
+    value true p
+    [ $# -eq 2 ]
+    [ "$1" = first ]
+    [ "$2" = "second option" ]
+    [ -z "$3" ]
+}
+
+test_unknown_short_option() {
+    # -u
+    value 0 source_result parse_result
+    value ${SA_PROCESS_GETOPT_FAILED} process_result
+}
+
+test_quotes_in_the_last_argument() {
+    # -p first second "\"\""
+    value 0 source_result parse_result process_result
+    value true p
+    [ $# -eq 3 ]
+    [ "$1" = first ]
+    [ "$2" = second ]
+    [ "$3" = '""' ]
+    [ -z "$4" ]
+}

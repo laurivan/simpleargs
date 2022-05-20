@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" \
+             --print-immediately arg @@int \
+             @afterprocessing='echo "value: ${print_immediately}"; marker=I_was_executed; [ 0 -eq "${print_immediately}" ];'
+
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_normal() {
+    # --print-immediately "0" "but not me"
+    value 0 source_result parse_result process_result
+    value 0 print_immediately
+    value "I_was_executed" marker
+    [ $# -eq 1 ]
+}
+
+test_not_given() {
+    # "do not print me"
+    value 0 source_result parse_result process_result
+    empty print_immediately marker
+    [ $# -eq 1 ]
+}
+
+test_non_zero_exit() {
+    # --print-immediately 1 "do not print me"
+    value 0 source_result parse_result
+    value "${SA_PROCESS_HOOK_FAILURE}" process_result
+    value 1 print_immediately
+    value "I_was_executed" marker
+}

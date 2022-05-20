@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+sa_short_description="simple testing of option validation"
+sa_long_description="This test case tests that option values are correctly validated against a list of valid values or a regular expression."
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" \
+             -u tim,john,linda \
+             -r/--register-plate arg @@egrep "[A-Z]{3}-[0-9]{3}" \
+             --
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_no_arguments() {
+    #
+    value 0 source_result parse_result process_result
+    [ $# -eq 0 ]
+}
+
+test_one_positional_argument() {
+    # my\ file.txt
+    value 0 source_result parse_result process_result
+    empty u
+    empty r register_plate
+    [ $# -eq 1 ]
+    [ "$1" = "my file.txt" ]
+}
+
+test_invalid_option_value() {
+    # -u jacob
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_valid_option_values() {
+    # -u tim -r AWE-432 pos1 pos2
+    value 0 source_result parse_result process_result
+    value tim u
+    value AWE-432 r register_plate
+    [ $# -eq 2 ]
+    [ "$1" = "pos1" ]
+    [ "$2" = "pos2" ]
+}
+
+test_invalid_option_values() {
+    # -u jacob --register-plate ADAE-321
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_valid_and_invalid_option_values() {
+    # -u jacob --register-plate ADA-321
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_valid_option_values_long_option() {
+    # -u john pos1 --register-plate AWE-432 pos2
+    value 0 source_result parse_result process_result
+    value john u
+    value AWE-432 r register_plate
+    [ $# -eq 2 ]
+    [ "$1" = "pos1" ]
+    [ "$2" = "pos2" ]
+}

@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" "<input file>" @multivalue
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_parameter_cannot_be_multivalue() {
+    #
+    # Parameter cannot take multiple values (without a list separator).
+    value 0 source_result
+    value "${SA_PARSE_INVALID_ARGUMENTS}" parse_result
+}

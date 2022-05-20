@@ -1,0 +1,379 @@
+#!/usr/bin/env bash
+# simpleargs-validation-functions
+
+sa_validate_grep() {
+    if [ $# -ne 2 ]
+    then
+        echo "${FUNCNAME}: incorrect number ($#) of parameters (should be 2)" >&2
+        return "${SA_INCORRECT_USE}"
+    fi
+    local pattern="$1"
+    local value="$2"
+
+    [ "${sa_gen_normal_error_msg}" = "true" ] && { sa_error_msg="'${value}' does not match regular expression '${pattern}'"; return "${SA_GENERATED_ERROR_MSG_STATUS}"; }
+    [ "${sa_gen_negated_error_msg}" = "true" ] && { sa_error_msg="'${value}' matches regular expression '${pattern}'"; return "${SA_GENERATED_ERROR_MSG_STATUS}"; }
+
+    #log FINEST "Validating value '${value}' against regexp '${pattern}'"
+    grep -q -e "${pattern}" <<< "${value}"
+}
+
+sa_validate_egrep() {
+    if [ $# -ne 2 ]
+    then
+        echo "${FUNCNAME}: incorrect number ($#) of parameters (should be 2)" >&2
+        return "${SA_INCORRECT_USE}"
+    fi
+    local pattern="$1"
+    local value="$2"
+
+    [ "${sa_gen_normal_error_msg}" = "true" ] && { sa_error_msg="'${value}' does not match extended regular expression '${pattern}'"; return "${SA_GENERATED_ERROR_MSG_STATUS}"; }
+    [ "${sa_gen_negated_error_msg}" = "true" ] && { sa_error_msg="'${value}' matches extended regular expression '${pattern}'"; return "${SA_GENERATED_ERROR_MSG_STATUS}"; }
+
+    #log FINEST "Validating value '${value}' against extended regexp '${pattern}'"
+    grep -qE -e "${pattern}" <<< "${value}"
+}
+
+sa_validate_glob() {
+    if [ $# -ne 2 ]
+    then
+        echo "${FUNCNAME}: incorrect number ($#) of parameters (should be 2)" >&2
+        return "${SA_INCORRECT_USE}"
+    fi
+    local extended_glob="$1"
+    local filepath="$2"
+    local filename="$(basename "${filepath}")"
+    [ "${sa_gen_normal_error_msg}" = "true" ] && { sa_error_msg="'${filename}' does not match glob '${extended_glob}'"; return "${SA_GENERATED_ERROR_MSG_STATUS}"; }
+    [ "${sa_gen_negated_error_msg}" = "true" ] && { sa_error_msg="'${filename}' matches glob '${extended_glob}'"; return "${SA_GENERATED_ERROR_MSG_STATUS}"; }
+
+    #log FINEST "Validating value '${value}' against glob '${extended_glob}'"
+    (
+        LC_COLLATE=C
+        [[ "${filename}" = ${extended_glob} ]]
+    )
+}
+
+sa_validate_filetype() {
+    if [ $# -ne 2 ]
+    then
+        echo "${FUNCNAME}: incorrect number ($#) of parameters (should be 2)" >&2
+        return "${SA_INCORRECT_USE}"
+    fi
+    local filetype_string="$1"
+    local filename="$2"
+
+    local filetype="$(file --brief --dereference "${filename}" 2>/dev/null)"
+    [ "${sa_gen_normal_error_msg}" = "true" ] && { sa_error_msg="'${filename}' is not of type '${filetype_string}' (but '${filetype}')"; return "${SA_GENERATED_ERROR_MSG_STATUS}"; }
+    [ "${sa_gen_negated_error_msg}" = "true" ] && { sa_error_msg="'${filename}' is of type '${filetype_string}'"; return "${SA_GENERATED_ERROR_MSG_STATUS}"; }
+
+    [[ "${filetype}" =~ ${filetype_string} ]]
+}
+
+sa_validate_exists() {
+    if [ $# -ne 1 ]
+    then
+        echo "${FUNCNAME}: incorrect number ($#) of parameters (should be 1)" >&2
+        return "${SA_INCORRECT_USE}"
+    fi
+
+    local filename="$1"
+    [ "${sa_gen_normal_error_msg}" = "true" ] && { sa_error_msg="No such file: '${filename}'"; return "${SA_GENERATED_ERROR_MSG_STATUS}"; }
+    [ "${sa_gen_negated_error_msg}" = "true" ] && { sa_error_msg="File exists: '${filename}'"; return "${SA_GENERATED_ERROR_MSG_STATUS}"; }
+    [ -e "$1" ]
+}
+
+sa_validate_file() {
+    if [ $# -ne 1 ]
+    then
+        echo "${FUNCNAME}: incorrect number ($#) of parameters (should be 1)" >&2
+        return "${SA_INCORRECT_USE}"
+    fi
+
+    local filename="$1"
+    [ "${sa_gen_normal_error_msg}" = "true" ] && { sa_error_msg="No such (ordinary) file: '${filename}'"; return "${SA_GENERATED_ERROR_MSG_STATUS}"; }
+    [ "${sa_gen_negated_error_msg}" = "true" ] && { sa_error_msg="(Ordinary) file exists: '${filename}'"; return "${SA_GENERATED_ERROR_MSG_STATUS}"; }
+    [ -f "$1" ]
+}
+
+sa_validate_dir() {
+    if [ $# -ne 1 ]
+    then
+        echo "${FUNCNAME}: incorrect number ($#) of parameters (should be 1)" >&2
+        return "${SA_INCORRECT_USE}"
+    fi
+
+    local filename="$1"
+    [ "${sa_gen_normal_error_msg}" = "true" ] && { sa_error_msg="No such directory: '${filename}'"; return "${SA_GENERATED_ERROR_MSG_STATUS}"; }
+    [ "${sa_gen_negated_error_msg}" = "true" ] && { sa_error_msg="Directory exists: '${filename}'"; return "${SA_GENERATED_ERROR_MSG_STATUS}"; }
+    [ -d "$1" ]
+}
+
+sa_validate_notempty() {
+    if [ $# -ne 1 ]
+    then
+        echo "${FUNCNAME}: incorrect number ($#) of parameters (should be 1)" >&2
+        return "${SA_INCORRECT_USE}"
+    fi
+
+    local filename="$1"
+    [ "${sa_gen_normal_error_msg}" = "true" ] && { sa_error_msg="No such file or not empty: '${filename}'"; return "${SA_GENERATED_ERROR_MSG_STATUS}"; }
+    [ "${sa_gen_negated_error_msg}" = "true" ] && { sa_error_msg="Non-empty file exists: '${filename}'"; return "${SA_GENERATED_ERROR_MSG_STATUS}"; }
+    [ -s "$1" ]
+}
+
+sa_validate_readable() {
+    if [ $# -ne 1 ]
+    then
+        echo "${FUNCNAME}: incorrect number ($#) of parameters (should be 1)" >&2
+        return "${SA_INCORRECT_USE}"
+    fi
+
+    local filename="$1"
+    [ "${sa_gen_normal_error_msg}" = "true" ] && { sa_error_msg="No such file or not readable: '${filename}'"; return "${SA_GENERATED_ERROR_MSG_STATUS}"; }
+    [ "${sa_gen_negated_error_msg}" = "true" ] && { sa_error_msg="Readable file exists: '${filename}'"; return "${SA_GENERATED_ERROR_MSG_STATUS}"; }
+    [ -r "$1" ]
+}
+
+sa_validate_writable() {
+    if [ $# -ne 1 ]
+    then
+        echo "${FUNCNAME}: incorrect number ($#) of parameters (should be 1)" >&2
+        return "${SA_INCORRECT_USE}"
+    fi
+
+    local filename="$1"
+    [ "${sa_gen_normal_error_msg}" = "true" ] && { sa_error_msg="No such file or not writable: '${filename}'"; return "${SA_GENERATED_ERROR_MSG_STATUS}"; }
+    [ "${sa_gen_negated_error_msg}" = "true" ] && { sa_error_msg="Writable file exists: '${filename}'"; return "${SA_GENERATED_ERROR_MSG_STATUS}"; }
+    [ -w "$1" ]
+}
+
+sa_validate_executable() {
+    if [ $# -ne 1 ]
+    then
+        echo "${FUNCNAME}: incorrect number ($#) of parameters (should be 1)" >&2
+        return "${SA_INCORRECT_USE}"
+    fi
+
+    local filename="$1"
+    [ "${sa_gen_normal_error_msg}" = "true" ] && { sa_error_msg="No such file or not executable: '${filename}'"; return "${SA_GENERATED_ERROR_MSG_STATUS}"; }
+    [ "${sa_gen_negated_error_msg}" = "true" ] && { sa_error_msg="Executable file exists: '${filename}'"; return "${SA_GENERATED_ERROR_MSG_STATUS}"; }
+    [ -x "$1" ]
+}
+
+sa_validate_modified() {
+    if [ $# -ne 1 ]
+    then
+        echo "${FUNCNAME}: incorrect number ($#) of parameters (should be 1)" >&2
+        return "${SA_INCORRECT_USE}"
+    fi
+
+    local filename="$1"
+    [ "${sa_gen_normal_error_msg}" = "true" ] && { sa_error_msg="File not modified since last read: '${filename}'"; return "${SA_GENERATED_ERROR_MSG_STATUS}"; }
+    [ "${sa_gen_negated_error_msg}" = "true" ] && { sa_error_msg="File modified since last read: '${filename}'"; return "${SA_GENERATED_ERROR_MSG_STATUS}"; }
+    [ -N "$1" ]
+}
+
+sa_validate_int() {
+    local usage="Usage: ${FUNCNAME} [<bounds>] <int> (got: $*)
+ - range: [<min>]..[<max>], lower and upper bounds (inclusive)
+   e.g. '0..10' or '-10..' or '..13' ('..' is the same as omitting bounds)
+ -   int: integer value (in format accepted by Bash) to be tested
+   e.g. '0' or '-12' or '+3'"
+
+    local value
+    local bounds
+    local status=0
+    local valid_integer=true
+
+    if [ $# -eq 1 ]
+    then
+        value="$1"
+    elif [ $# -eq 2 ]
+    then
+        bounds="$1"
+        value="$2"
+        [[ "${bounds}" != *..* ]] && { echo "${usage}" >&2; return 2; }
+
+        # If there is neither min nor max value make 'bounds' empty
+        # to signal that the value (integer) should be checked only for validity.
+        [ "${bounds}" = ".." ] && bounds=""
+    else
+        echo "${FUNCNAME}: incorrect number ($#) of parameters (should be 1 or 2)" >&2
+        echo "${usage}" >&2
+        return "${SA_INCORRECT_USE}"
+    fi
+
+    if [ "${value}" -eq "${value}" ] 2>/dev/null
+    then
+        true
+    else
+        valid_integer=false
+        status=1
+    fi
+
+    if ${valid_integer} && [ -n "${bounds}" ]
+    then
+        local min=${bounds%%..*} # '1'
+        local max=${bounds##*..} # '6'
+
+        if { [ -z "${min}" ] || [ "${value}" -ge "${min}" ]; } &&
+           { [ -z "${max}" ] || [ "${value}" -le "${max}" ]; }
+        then
+            status=0
+        else
+            status=1
+        fi
+    fi
+
+    # Normal (positive) error message: either the integer was invalid or it was not in the given range
+    if [ "${sa_gen_normal_error_msg}" = "true" ]
+    then
+        if ${valid_integer}
+        then
+            if [ -n "${min}" ] && [ -n "${max}" ]
+            then
+                sa_error_msg="Value '${value}' not in range: ${bounds}"
+            else
+                [ -n "${min}" ] && sa_error_msg="Value '${value}' less than ${min}"
+                [ -n "${max}" ] && sa_error_msg="Value '${value}' greater than ${max}"
+            fi
+        else
+            sa_error_msg="Invalid integer value: '${value}'"
+        fi
+        return "${SA_GENERATED_ERROR_MSG_STATUS}"
+    fi
+
+    # Negative error message: the ingeger was valid (and in the given range)
+    if [ "${sa_gen_negated_error_msg}" = "true" ]
+    then
+        if [ -n "${bounds}" ]
+        then
+            if [ -n "${min}" ] && [ -n "${max}" ]
+            then
+                sa_error_msg="Value '${value}' should not be an integer in range ${bounds}"
+            else
+                [ -n "${min}" ] && sa_error_msg="Value '${value}' should not be greater than or equal to ${min}"
+                [ -n "${max}" ] && sa_error_msg="Value '${value}' should not be less than or equal to ${max}"
+            fi
+        else
+            sa_error_msg="Value '${value}' should not be a valid integer"
+        fi
+        return "${SA_GENERATED_ERROR_MSG_STATUS}"
+    fi
+
+    return "${status}"
+}
+
+sa_validate_float() {
+    local usage="Usage: ${FUNCNAME} [<bounds>] <float> (got: $*)
+ - range: [<min>]..[<max>], lower and upper bounds (inclusive)
+   e.g. '0..10E1' or '-1.8..12.3' or '-119e-2..13' ('..' is the same as omitting bounds)
+ -   float: floating point value in simple or scientific notation to be tested
+   e.g. '1.3' or '-12e2' or '+3E-2'"
+
+    local decimal_places=20
+    local value original_value bounds
+    local status=0
+    local valid_float=true
+
+    if [ $# -eq 1 ]
+    then
+        value="$1"
+    elif [ $# -eq 2 ]
+    then
+        bounds="$1"
+        value="$2"
+        [[ "${bounds}" != *..* ]] && { echo "${usage}" >&2; return 2; }
+
+        # If there is neither min nor max value make 'bounds' empty
+        # to signal that the value (float) should be checked only for validity.
+        [ "${bounds}" = ".." ] && bounds=""
+    else
+        echo "${FUNCNAME}: incorrect number ($#) of parameters (should be 1 or 2)" >&2
+        echo "${usage}" >&2
+        return "${SA_INCORRECT_USE}"
+    fi
+    original_value="${value}"
+
+    # http://www.regular-expressions.info/floatingpoint.html
+    if grep -E '^[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?$' <<< "${value}" >/dev/null
+    then
+        true
+    else
+        valid_float=false
+        status=1
+    fi
+
+    if ${valid_float} && [ -n "${bounds}" ]
+    then
+        local min=${bounds%%..*} # '-2.9e3'
+        local max=${bounds##*..} # '+13E1'
+        local original_min="${min}"
+        local original_max="${max}"
+
+        value="$(printf "%.${decimal_places}f" "${value}")"
+        [ $? -eq 0 ] || { echo "${usage}" >&2; return 2; }
+
+        # Convert value, min and max to format understood by bc
+        # https://stackoverflow.com/a/12882612 (bc does not understand scientific notation)
+        if [ -n "${min}" ]
+        then
+            if grep -E '^[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?$' <<< "${min}" >/dev/null
+            then
+                min="$(printf "%.${decimal_places}f" "${min}")" || { echo "${usage}" >&2; return 2; }
+                [ "$(bc <<< "${value} >= ${min}")" -eq 1 ] || status=1
+            else
+                echo "Malformed min value: '${min}'" >&2
+                echo "${usage}" >&2; return 2
+            fi
+        fi
+        if [ -n "${max}" ]
+        then
+            if grep -E '^[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?$' <<< "${max}" >/dev/null
+            then
+                max="$(printf "%.${decimal_places}f" "${max}")" || { echo "${usage}" >&2; return 2; }
+                [ "$(bc <<< "${value} <= ${max}")" -eq 1 ] || status=1
+            else
+                echo "Malformed max value: '${max}'" >&2
+                echo "${usage}" >&2; return 2
+            fi
+        fi
+    fi
+
+    # Normal (positive) error message: either the float was invalid or it was not in the given range
+    if [ "${sa_gen_normal_error_msg}" = "true" ]
+    then
+        if ${valid_float}
+        then
+            if [ -n "${min}" ] && [ -n "${max}" ]
+            then
+                sa_error_msg="Value '${original_value}' not in range: ${bounds}"
+            else
+                [ -n "${min}" ] && sa_error_msg="Value '${original_value}' less than ${original_min}"
+                [ -n "${max}" ] && sa_error_msg="Value '${original_value}' greater than ${original_max}"
+            fi
+        else
+            sa_error_msg="Invalid float value: '${original_value}'"
+        fi
+        return "${SA_GENERATED_ERROR_MSG_STATUS}"
+    fi
+
+    # Negative error message: the ingeger was valid (and in the given range)
+    if [ "${sa_gen_negated_error_msg}" = "true" ]
+    then
+        if [ -n "${bounds}" ]
+        then
+            if [ -n "${min}" ] && [ -n "${max}" ]
+            then
+                sa_error_msg="Value '${original_value}' should not be a float in range ${bounds}"
+            else
+                [ -n "${min}" ] && sa_error_msg="Value '${original_value}' should not be greater than or equal to ${original_min}"
+                [ -n "${max}" ] && sa_error_msg="Value '${original_value}' should not be less than or equal to ${original_max}"
+            fi
+        else
+            sa_error_msg="Value '${original_value}' should not be a valid float"
+        fi
+        return "${SA_GENERATED_ERROR_MSG_STATUS}"
+    fi
+
+    return "${status}"
+}

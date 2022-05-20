@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+sa_short_description="greet people"
+sa_long_description=(
+"Greet people with customizable greeting and optional small talk. \
+Additionally, you can introduce your friends to the people you are greeting" )
+
+# -------------------------------- simpleargs --------------------------------
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+
+sa_parse "$0" \
+         -g/--greeting arg @@egrep "^[A-Z][a-z]+( [a-z]+)?$" @default=Hello \
+         @doc="Greeting to print (default: '@{d}')." \
+         @doc="Greeting can be a single word starting with a capital \
+letter (e.g. 'Hey') or consist of two words (e.g. 'Good morning')." \
+         --small-talk \
+         @doc="In addition to greeting people exercise some small talk \
+ about the weather. See also --weather." \
+         --weather sunny,cloudy,rainy,foggy,mysterious@default \
+         @doc="Weather type to be used in small talk (enabled using \
+--small-talk). Allowed weather types: @{v} (default: '@{d}')." \
+         -f/--my-friend arg @@egrep "^[A-Z][a-z]+$" @varname=my_friends \
+         @multivalue: \
+         @doc="One or more friends in your entourage." \
+         "[<person>]..." @default=World @@egrep "^[A-Z][a-z]+$" \
+         @varname=people \
+         @doc="One or more people to greet. By default greet only '@{d}'."
+
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------
+
+for person in "${people[@]}"
+do
+    echo "${greeting}, ${person}!"
+done
+case ${#my_friends[@]} in
+    0) echo "Today I'm utterly alone.";;
+    1) echo "Let me introduce my friend, ${my_friends[0]}." ;;
+    2) echo "Here are my friends, ${my_friends[0]} and ${my_friends[1]}." ;;
+    *) echo "Here are my ${#my_friends[@]} friends." ;;
+esac
+
+${small_talk} && echo "Such ${weather} weather, isn't it?"

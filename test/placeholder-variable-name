@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" \
+             -n/--name arg \
+             --user jack,john,james @varname=ssh_user
+
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_placeholder_variable_name() {
+    # -n jacob
+    value 0 source_result parse_result process_result
+    empty arg
+    value jacob n name
+    [ $# -eq 0 ]
+}
+
+test_explicit_variable_name() {
+    # --user james
+    value 0 source_result parse_result process_result
+    empty n name
+    empty user
+    value james ssh_user
+    [ $# -eq 0 ]
+}

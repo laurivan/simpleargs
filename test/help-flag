@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+###########################################
+
+test_help_enabled_normal() {
+    # -v first
+    sa_default_tokens=( @expand=help )
+
+    [ "$source_result" -eq 0 ]
+
+    sa_parse "$0" -p port -v/--verbose "<input>"
+    parse_result=$?
+    [ "$parse_result" -eq 0 ] &&
+        sa_process "$@"; process_result=$?
+    [ "$process_result" -eq 0 ] &&
+        eval "set -- ${sa_args}"
+
+    value 0 source_result parse_result process_result
+    value true v verbose
+    value first input
+    [ $# -eq 0 ]
+}
+
+test_help_enabled_help_invocation_1() {
+    # -h
+    sa_default_tokens=( @expand=help )
+
+    [ "$source_result" -eq 0 ]
+
+    sa_parse "$0" -p port -v/--verbose
+    parse_result=$?
+    [ "$parse_result" -eq 0 ] &&
+        ( sa_process "$@" ) && process_result=$?
+    [ "$process_result" -eq 0 ] &&
+        eval "set -- ${sa_args}"
+
+    grep -e "Usage: $(basename "$0")" "${sa_test_stdout}" >/dev/null
+    grep -e "-p ARG" "${sa_test_stdout}" >/dev/null
+}
+
+test_help_enabled_by_default_help_invocation_2() {
+    # --help
+
+    [ "$source_result" -eq 0 ]
+
+    sa_parse "$0" -p port -v/--verbose
+    parse_result=$?
+    [ "$parse_result" -eq 0 ] &&
+        ( sa_process "$@" ) && process_result=$?
+    [ "$process_result" -eq 0 ] &&
+        eval "set -- ${sa_args}"
+
+    grep -e "Usage: $(basename "$0")" "${sa_test_stdout}" >/dev/null
+    grep -e "-p ARG" "${sa_test_stdout}" >/dev/null
+}
+
+test_help_disabled_help_invocation_1() {
+    # --help
+    #clearcache
+    sa_default_tokens=()
+
+    [ "$source_result" -eq 0 ]
+
+    sa_parse "$0" -p port -v/--verbose &&
+        parse_result=$?
+    ( sa_process "$@" ) || process_result=$?
+
+    value 0 parse_result
+    value "${SA_PROCESS_GETOPT_FAILED}" process_result
+}
+
+test_help_disabled_help_invocation_2() {
+    # -h
+    #clearcache
+    sa_default_tokens=()
+
+    [ "$source_result" -eq 0 ]
+
+    sa_parse "$0" -p port -v/--verbose &&
+        parse_result=$?
+    ( sa_process "$@" ) || process_result=$?
+
+    value 0 parse_result
+    value "${SA_PROCESS_GETOPT_FAILED}" process_result
+}
+
+test_help_disabled_flag_in_use() {
+    # -v first
+    #clearcache
+    sa_default_tokens=()
+
+    [ "$source_result" -eq 0 ]
+
+    sa_parse "$0" -h @varname=high -p port -v/--verbose "<input>"
+    parse_result=$?
+    [ "$parse_result" -eq 0 ] &&
+        sa_process "$@"; process_result=$?
+    [ "$process_result" -eq 0 ] &&
+        eval "set -- ${sa_args}"
+
+    value 0 source_result parse_result process_result
+    value true v verbose
+    value first input
+    value false high
+    [ $# -eq 0 ]
+}
+
+test_help_enabled_flag_clash() {
+    # -v first
+    #clearcache
+    sa_default_tokens=( @expand=help )
+
+    [ "$source_result" -eq 0 ]
+
+    sa_parse "$0" -h @varname=high -p port -v/--verbose "<input>" ||
+        parse_result=$?
+    value "${SA_PARSE_INVALID_ARGUMENTS}" parse_result
+}

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+# -------------------------------- simpleargs --------------------------------
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+sa_parse "$0" \
+         -g/--greeting arg @default="Hello" \
+         --small-talk \
+         "[<person>]..." @default=World @@egrep "^[A-Z][a-z]+$" @varname=people
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------
+for person in "${people[@]}"
+do
+    echo "${greeting}, ${person}!"
+done
+${small_talk} && echo "Such nice weather, isn't it?"

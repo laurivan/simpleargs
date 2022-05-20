@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0"
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_tic_time() {
+    #
+    sa_tic_time foo
+    sleep 0.1
+    sa_toc_time foo
+    [ "${_toc_foo}" -eq "${_toc_foo}" ]
+    [ "${_toc_foo}" -ge 100 ]
+
+    sa_tic_time foo
+    sleep 0.1
+    local toc_print_output=$(sa_toc_and_print foo)
+    read -r dashes number unit timer_name <<< "${toc_print_output}"
+    value "-----" dashes
+    value "ms" unit
+    [ "${number}" -ge 100 ]
+    value "(foo)" timer_name
+}
+
+test_tic_time_plus() {
+    #
+    sa_tic_time foo
+    sa_tic_time_plus 1000 foo
+    sa_toc_tic_time foo
+    foo_toc_time_in_ms=$(sed -r 's/[^0-9 ]* (-?[0-9]+) ms.*/\1/' <<< "$(sa_print_toc_time foo)")
+    [ "${foo_toc_time_in_ms}" -eq  "${_toc_foo}" ]
+    [ "${foo_toc_time_in_ms}" -lt 0 ]
+}
+
+test_ms2s() {
+    #
+    [ $(sa_ms2s 0) = 0.000 ]
+    [ $(sa_ms2s 2) = 0.002 ]
+    [ $(sa_ms2s 10) = 0.010 ]
+    [ $(sa_ms2s 49) = 0.049 ]
+    [ $(sa_ms2s 109) = 0.109 ]
+    [ $(sa_ms2s 1012) = 1.012 ]
+    [ $(sa_ms2s 31888) = 31.888 ]
+}
+
+test_ms2s_negative() {
+    #
+    #skip
+    [ $(sa_ms2s -0) = -0.000 ]
+    [ $(sa_ms2s -2) = -0.002 ]
+    [ $(sa_ms2s -10) = -0.010 ]
+    [ $(sa_ms2s -49) = -0.049 ]
+    [ $(sa_ms2s -109) = -0.109 ]
+    [ $(sa_ms2s -1012) = -1.012 ]
+    [ $(sa_ms2s -31888) = -31.888 ]
+}
+
+test_stopwatch() {
+    #
+    sa_stopwatch_start
+    sa_stopwatch_start timer1
+    sa_stopwatch_start timer1 && false # Already started
+    sa_stopwatch_start timer1 2>&1 | grep -q "already running"
+
+    # SLEEP 50 ms
+    sleep 0.05
+
+    sa_stopwatch_stop
+    sa_stopwatch_stop && false # Already stopped
+    sa_stopwatch_stop 2>&1 | grep -q "already stopped"
+    output="$(sa_stopwatch_print)"
+    echo "${output}"
+    read -r dashes number unit timer_name <<< "${output}"
+    value "-----" dashes
+    value "ms" unit
+    [ "${number}" -ge 50 ]
+    empty timer_name
+    unset dashes number unit timer_name
+
+    # SLEEP 100 ms
+    sleep 0.1
+
+    sa_stopwatch_stop timer1
+    output="$(sa_stopwatch_print timer1)"
+    echo "${output}"
+    read -r dashes number unit timer_name <<< "${output}"
+    value "-----" dashes
+    value "ms" unit
+    [ "${number}" -ge 150 ]
+    value "(timer1)" timer_name
+    sa_stopwatch_start timer1
+    unset dashes number unit timer_name
+
+    sa_stopwatch_start
+    # SLEEP 50 ms
+    sleep 0.05
+
+    sa_stopwatch_stop
+    output="$(sa_stopwatch_print)"
+    echo "${output}"
+    read -r dashes number unit timer_name <<< "${output}"
+    value "-----" dashes
+    value "ms" unit
+    [ "${number}" -ge 100 ]
+    empty timer_name
+    unset dashes number unit timer_name
+
+    sa_stopwatch_reset
+    output="$(sa_stopwatch_print)"
+    echo "${output}"
+    read -r dashes number unit timer_name <<< "${output}"
+    value "-----" dashes
+    value "ms" unit
+    value 0 number
+    empty timer_name
+    unset dashes number unit timer_name
+
+    sa_stopwatch_stop timer1
+    output="$(sa_stopwatch_print timer1)"
+    echo "${output}"
+    read -r dashes number unit timer_name <<< "${output}"
+    value "-----" dashes
+    value "ms" unit
+    [ "${number}" -ge 200 ]
+    value "(timer1)" timer_name
+}

@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0"
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_no_arguments() {
+    #
+    sa_fold_tokens || status=$?
+    value 2 status
+    diff "${sa_test_stderr}" - <<EOF
+Usage: sa_fold_tokens <max line width> <token>...
+EOF
+}
+
+test_no_tokens() {
+    #
+    diff <(sa_fold_tokens 80) - <<EOF
+EOF
+}
+
+test_one_short_token() {
+    #
+    diff <(sa_fold_tokens 80 "token") - <<EOF
+token
+EOF
+}
+
+test_one_short_token_with_spaces() {
+    #
+    diff <(sa_fold_tokens 80 "  token  with spaces") - <<EOF
+  token  with spaces
+EOF
+}
+
+test_one_long_token() {
+    #
+    diff <(sa_fold_tokens 10 "one relatively long token") - <<EOF
+one relatively long token
+EOF
+}
+
+test_short_tokens() {
+    #
+    diff <(sa_fold_tokens 10 short token and another one) - <<EOF
+short
+token and
+another
+one
+EOF
+}
+
+test_tokens_with_spaces() {
+    #
+    diff <(sa_fold_tokens 10 "some space" "    and even more" "this  l" "and this" "four" "chars") - <<EOF
+some space
+    and even more
+this  l
+and this
+four chars
+EOF
+}
+
+test_synopsis() {
+    #
+    diff <(sa_fold_tokens 10 "Usage:" "example" "[OPTION]..." "<input file>" "<output file>" "<output file>" "[<log file>]") - <<EOF
+Usage:
+example
+[OPTION]...
+<input file>
+<output file>
+<output file>
+[<log file>]
+EOF
+
+    diff <(sa_fold_tokens 20 "Usage:" "example" "[OPTION]..." "<input file>" "<output file>" "<output file>" "[<log file>]") - <<EOF
+Usage: example
+[OPTION]...
+<input file>
+<output file>
+<output file>
+[<log file>]
+EOF
+}
+
+test_indentation() {
+    #
+    diff <(sa_fold_indent_2="  " sa_fold_tokens 10 "some space" "    and even more" "this  l" "and this" "four" "chars") - <<EOF
+some space
+      and even more
+  this  l
+  and this
+  four
+  chars
+EOF
+}

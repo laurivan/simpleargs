@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+
+sa_default_tokens=()
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" \
+             -v/--verbose \
+             -c compression \
+             -h/--help @varname=show_help \
+             -u/--remote-user arg @varname=admin_user \
+             -g/--group/-d/--yet-another-alternative \
+             "<first file>" \
+             "<second file>" @varname=number_two_file \
+             "[<first optional arg>]" \
+             "[<second-optional>]" \
+             "[<third optional>]" @varname=third_file
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_custom_varname_in_novalue_option() {
+    # -h first "second one"
+    value 0 source_result parse_result process_result
+    value first first_file
+    value "second one" number_two_file
+    empty h help
+    value true show_help
+}
+
+test_two_parameters() {
+    # first "second one"
+    value 0 source_result parse_result process_result
+    value false v verbose
+    empty compression
+    empty  h help
+    value false show_help
+    empty admin_user u remote_user
+    value false g group d yet_another_alternative
+
+    value first first_file
+    value "second one" number_two_file
+    empty second_file
+    empty first_optional_arg second_optional third_optional third_file
+    empty input_2
+    [ $# -eq 0 ]
+}
+
+test_positional_parameters() {
+    # first "second one" "the third arg" foo " bar bar" 111 222
+    value 0 source_result parse_result process_result
+    value first first_file
+    value "second one" number_two_file
+    empty second_file
+    value "the third arg" first_optional_arg
+    value "foo" second_optional
+    value " bar bar" third_file
+    empty third_optional third optional
+
+    [ $# -eq 2 ]
+    [ "$1" = 111 ]
+    [ "$2" = 222 ]
+}
+
+test_options_and_parametersspaces_and_quotes() {
+    # --verbose first -c 21 second -u jeff third --yet-another-alternative fourth fifth sixth seventh
+    value 0 source_result parse_result process_result
+
+    value true v verbose
+    value 21 compression
+    empty c
+    value jeff admin_user
+    empty u remote_user
+    value true g group d yet_another_alternative
+
+    value first first_file
+    value second number_two_file
+    empty second_file
+    value third first_optional_arg
+    value fourth second_optional
+    value fifth third_file
+    empty third_optional
+    value sixth
+    value seventh
+
+    [ $# -eq 2 ]
+    [ "$1" = 'sixth' ]
+    [ "$2" = "seventh" ]
+}

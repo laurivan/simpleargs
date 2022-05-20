@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" \
+             --port arg \
+             --part arg
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_empty() {
+    #
+    value 0 source_result parse_result process_result
+    empty arg port part
+    [ $# -eq 0 ]
+}
+
+test_normal() {
+    # --port 8080 --part foo
+    value 0 source_result parse_result process_result
+    empty arg
+    value 8080 port
+    value foo part
+    [ $# -eq 0 ]
+}
+
+test_unique_prefix_1() {
+    # --po 8080
+    value 0 source_result parse_result process_result
+    empty arg part
+    value 8080 port
+    [ $# -eq 0 ]
+}
+
+test_unique_prefix_2() {
+    # --pa bar
+    value 0 source_result parse_result process_result
+    empty arg port
+    value bar part
+    [ $# -eq 0 ]
+}
+
+test_unique_prefix_error() {
+    # --p 8080
+    value 0 source_result parse_result
+    value "${SA_PROCESS_GETOPT_FAILED}" process_result
+}

@@ -1,0 +1,161 @@
+#!/usr/bin/env bash
+# simpleargs-manpage
+
+sa_generate_man_page() {
+    sa_create_config_dir || return "${SA_PARSE_INTERNAL_ERROR}"
+
+    local script_name="$1"
+    local script_path="$2"
+    local manpage_file="${sa_manpage_dir}/${script_name}.1.gz"
+    if [ -f "${manpage_file}" ]
+    then
+        if [ "${sa_parse_only}" = "true" ]
+        then
+            log CONFIG "sa_parse_only=${sa_parse_only}: refreshing manual page"
+        elif [ "${manpage_file}" -ot "${script_path}" ]
+        then
+            log CONFIG "Manual page older than the script: refreshing"
+        else
+            log CONFIG "Manual page up-to-date"
+            return 0
+        fi
+    else
+        log CONFIG "Manual page does not exist: creating"
+    fi
+
+    mkdir -p "${sa_tmp_dir}/troff" || return 2
+    local man_section=1
+    local troff_tmp="${sa_tmp_dir}/troff/${script_name}.${man_section}-$$"
+    local troff_final="${script_name}.${man_section}"
+    echo -n "" > "${troff_tmp}" # Use echo to make code coverage tool mark this line
+
+    log FINER "Writing manual page (troff) into temporary file: '${troff_tmp}'"
+    exec 30>&1 >> "${troff_tmp}" # FD 30 outputs to stdout, FD 1 outputs to file ${troff_tmp}
+    {
+        # Comment
+        echo ".\\\"This man page was generated using simpleargs ($(date +%Y%m%dT%H%M%S))."
+
+        # Title
+        echo -n ".TH ${script_name^^}"
+        echo -n " ${man_section}"
+
+        # Leave date string in man pages empty. This makes unit tests easier (the man page stays
+        # the same across builds). Besides, a date in an auto-generated man page adds no value.
+        #echo " \"$(date '+%B %Y')\"" # For example, "October 2017"
+        echo -n " \"\""
+
+        echo -n " \"${script_name}${sa_script_version:+ ${sa_script_version}}\""
+        echo -n " \"User Scripts\""
+        echo
+
+        # Name
+        echo ".SH NAME"
+        echo "${script_name}${sa_short_description:+ \\- ${sa_short_description}}"
+
+        # Synopsis
+        echo ".SH SYNOPSIS"
+        echo ".B ${script_name}"
+        echo -n '[\fIOPTION\fR]...'
+        local parammap_name
+        for parammap_name in ${sa_parammaps[@]}
+        do
+            declare -n param=${parammap_name}
+            if [ "${param[optional]}" = "true" ]
+            then
+                echo -n " ${param[fullname]}"
+            else
+                echo -n " ${param[fullname]}"
+            fi
+        done
+        echo # newline
+
+        # Long description
+        local paragraph
+        if [ "${#sa_long_description[@]}" -gt 0 ]
+        then
+            echo ".SH DESCRIPTION"
+            for paragraph in "${sa_long_description[@]}"
+            do
+                echo ".PP"
+                echo "${paragraph}" | sed -r -e "s/@endshortdoc@//"
+            done
+        fi
+
+        # Options
+        if [ "${#sa_optionmaps[@]}" -gt 0 ]
+        then
+            echo ".SH OPTIONS"
+            local optionmap_name
+            for optionmap_name in ${sa_optionmaps[@]}
+            do
+                declare -n option=${optionmap_name}
+                echo ".TP"
+                local flag arg_string escaped_flag
+                local first=true
+                # \fB\-u ARG\fR, \fB\-\-define-user ARG\fR
+                for flag in ${option[flags]}
+                do
+                    escaped_flag=$(sed -e 's/^--/\\-\\-/' -e 's/^-/\\-/' <<< $flag)
+                    case "${option[type]}" in
+                        novalue)
+                            arg_string=""
+                            ;;
+                        value)
+                            arg_string=" ARG"
+                            ;;
+                        optionalvalue)
+                            [[ "$flag" = --* ]] && arg_string="=[ARG]" || arg_string="[ARG]"
+                            ;;
+                        multivalue)
+                            if [ "${option[list]}" = "true" ]
+                            then
+                                local separator="${option[listseparator]}"
+                                arg_string=" ARG1${separator}ARG2${separator}..."
+                            else
+                                arg_string=" ARG"
+                            fi
+                            ;;
+                    esac
+
+                    if ${first}
+                    then
+                        first=false
+                    else
+                        echo -n ", "
+                    fi
+                    echo -n "\\fB${escaped_flag}${arg_string}\\fR"
+                done
+                echo # newline
+                declare -n docarray="${option[docarray]}"
+
+                if [ "${#docarray[@]}" -gt 0 ]
+                then
+                    local flag_and_arg="${flag}${arg_string}"
+                    # Man page option description text is indented with 6 spaces (6-1=5)
+                    [ ${#flag_and_arg} -gt 5 ] && [ ${#flag_and_arg} -lt 10 ] && echo .br
+
+                    local doc_entry
+                    for doc_entry in "${docarray[@]}"
+                    do
+                        declare -a valid_values_sed_operation=()
+                        if [[ "${doc_entry}" = *"@{v}"* ]]
+                        then
+                            local valid_values_string="$(sa_generate_valid_values_string "${optionmap_name}")" || return
+                            valid_values_sed_operation+=( "@{v}" "${valid_values_string}" )
+                        fi
+
+                        sa_replace_token "${doc_entry}" "@{d}" "${option[default]}" "@endshortdoc@" "" "${valid_values_sed_operation[@]}"
+                        echo
+                    done
+                else
+                    echo # No documentation: add an empty line.
+                fi
+            done
+        fi
+    }
+    exec >&30 30>&- # stdout back to screen, close FD 30
+
+    gzip "${troff_tmp}" || { log ERROR "Failed to gzip manual page"; return 2; }
+    mv "${troff_tmp}.gz" "${sa_manpage_dir}/${troff_final}.gz" || { log ERROR "Failed to move manual page: '${troff_tmp}.gz' -> '${sa_manpage_dir}'"; return 2; }
+    log FINE "Manual page (troff) stored for examining in '${troff_tmp}'"
+}

@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+# -------------------------------- simpleargs --------------------------------
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+sa_parse "$0" --user arg @default=root \
+         "[<output>]" @default=stdout \
+         "[<input file>]..." @default=- @varname=input_files
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------
+# ...
+echo "user: '${user}'"
+echo "output: '${output}'"
+for input_file in "${input_files[@]}"
+do
+    echo "  - input: '${input_file}'"
+done

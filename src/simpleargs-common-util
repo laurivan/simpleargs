@@ -1,0 +1,337 @@
+#!/usr/bin/env bash
+# simpleargs-common-util
+
+# Prints one character that does not appear in strings given as arguments.
+# The printed character can be used as e.g. sed delimiter character.
+# For example, a hard coded delimiter '/' can fail unexpectedly:
+# > myvar="value/with/slashes"
+# > ... sed "s/${myvar}//" # Does not work
+sa_safe_delimiter() {
+    local delimiter
+    for delimiter in '/' '|' '#' '@' '%' '+' {0..9} {a..z}
+    do
+        # Escape $delim_char ?
+        [[ "$*" = *"${delimiter}"* ]] || break
+    done
+    echo -n "${delimiter}"
+}
+
+sa_print_stack_trace() {
+    local frame=0
+    while caller $frame
+    do
+        ((frame++));
+    done
+    echo "$*"
+}
+
+# Check if <value> is one of the arguments
+# sa_args_contain <value> [<arg>...]
+sa_args_contain() {
+    local value="$1"; shift
+    local arg
+    for arg in "$@"
+    do
+        [ "$arg" = "$value" ] && return 0
+    done
+    return 1
+}
+
+# Check that array contains all the values
+# sa_array_contains <array name> <value> [<value>...]
+#
+# Environment variable modifiers:
+# - sa_transform_arrayvalue:
+#   * '': simply compare array values to parameter values
+#   * 'envsubst': replace environment variables in array values before comparing to parameter values
+#   * 'eval': evaluate array values before comparing to parameter values
+sa_array_contains() {
+    local arrayname="$1"
+    declare -n __array="$arrayname"
+    shift
+
+    local value
+    for value in "$@"
+    do
+        local value_found=false
+        local item_in_array
+        for item_in_array in "${__array[@]}"
+        do
+            if [ "${sa_transform_arrayvalue}" = "" ]
+            then
+                [ "$item_in_array" = "$value" ] && { value_found=true; break; }
+            elif [ "${sa_transform_arrayvalue}" = "envsubst" ]
+            then
+                [ "$(envsubst <<< "${item_in_array}")" = "$value" ] && { value_found=true; break; }
+            elif [ "${sa_transform_arrayvalue}" = "eval" ]
+            then
+                [ "$(eval "${item_in_array}")" = "$value" ] && { value_found=true; break; }
+            else
+                log ERROR "Unknown value for sa_transform_arrayvalue: '${sa_transform_arrayvalue}'"
+                return "${SA_INTERNAL_ERROR}"
+            fi
+        done
+        $value_found || return 1
+    done
+    return 0
+}
+
+sa_map_contains_key() {
+    local mapname="$1"
+    local value="$2"
+    local key
+    declare -n __map="$mapname"
+    for key in "${!__map[@]}"
+    do
+        [ "$key" = "$value" ] && return 0
+    done
+    return 1
+}
+
+sa_map_contains_value() {
+    local mapname="$1"
+    local value="$2"
+    local value_in_map
+    declare -n __map="$mapname"
+    for value_in_map in "${__map[@]}"
+    do
+        [ "$value_in_map" = "$value" ] && return 0
+    done
+    return 1
+}
+
+sa_map_copy() {
+    declare -n __source="$1"
+    declare -Ag "$2"
+    declare -n __dest="$2"
+    log FINEST "Copying map: '$1' -> '$2'"
+    local key
+    for key in "${!__source[@]}"
+    do
+        log FINEST "Copying [$key]='${__source[$key]}'"
+        __dest["$key"]="${__source[$key]}"
+    done
+}
+
+sa_array_copy() {
+    declare -n __source="$1"
+    declare -ag "$2"
+    declare -n __dest="$2"
+    log FINEST "Copying array: '$1' -> '$2'"
+    __dest=("${__source[@]}")
+}
+
+######### NOTE! ############
+# See the warning in the beginning of simpleargs-process about variable naming and conventions.
+
+# $1: value
+# $2, $3, ...: variables
+sa_assign() {
+    local __sa_value="$1"; shift
+    local __sa_variable
+
+    for __sa_variable in "$@"
+    do
+        log FINEST "Assigning variable: ${__sa_variable}='${__sa_value}'${sa_transform_value:+ (transform: ${sa_transform_value})}"
+        declare -g "${__sa_variable}" || { log ERROR "Invalid variable name: '${__sa_variable}'"; return 2; }
+        # Temporary (name reference) to assign the value
+        declare -n __sa_tmp_variable="${__sa_variable}"
+        # Assign to name reference (and hence to the global variable defined above)
+        [ "${sa_transform_value}" = "" ] && { __sa_tmp_variable="${__sa_value}"; continue; }
+        [ "${sa_transform_value}" = "envsubst" ] && { __sa_tmp_variable="$(envsubst <<< "${__sa_value}")" || return; continue; }
+        [ "${sa_transform_value}" = "eval" ] && { __sa_tmp_variable="$(eval "${__sa_value}")" || return; continue; }
+    done
+}
+
+# $1: list e.g. "12,14,29"
+# $2: separator e.g. "," (note: an empty separator string means "assign only a single value to the list")
+# $3, $4, ...: variables
+sa_assign_list() {
+    local __sa_list="$1"
+    local __sa_separator="$2"
+    local __sa_i
+    shift 2
+
+    local __sa_variable
+    for __sa_variable in "$@"
+    do
+        declare -ag "${__sa_variable}" || { ERROR "Invalid variable name: '${__sa_variable}'"; return 2; }
+        log FINEST "Assigning list: ${__sa_variable}='${__sa_list}'${sa_transform_value:+ (transform: ${sa_transform_value})}"
+        IFS="${__sa_separator}" read -ra "${__sa_variable}" <<< "${__sa_list}"
+        if [ "${sa_transform_value}" = "envsubst" ]
+        then
+            declare -n __sa_tmp_array="${__sa_variable}"
+            for __sa_i in ${!__sa_tmp_array[@]}
+            do
+                __sa_tmp_array[${__sa_i}]="$(envsubst <<< "${__sa_tmp_array[${__sa_i}]}")"
+            done
+        elif [ "${sa_transform_value}" = "eval" ]
+        then
+            declare -n __sa_tmp_array="${__sa_variable}"
+            for __sa_i in ${!__sa_tmp_array[@]}
+            do
+                __sa_tmp_array[${__sa_i}]="$(eval "${__sa_tmp_array[${__sa_i}]}")"
+            done
+        fi
+    done
+}
+
+# $1: list (12,14,29) or single value (12)
+# $2: separator (,) or "" if single value is provided
+# $3, $4, ...: variables
+#
+# Append three integers (1, 2 and 3) to two arrays
+# > sa_append_to_list 1,2,3 , array_one array_two
+# Append one string "1,2,3" to two arrays
+# > sa_append_to_list 1,2,3 "" array_one array_two
+sa_append_to_list() {
+    local __sa_list="$1"
+    local __sa_separator="$2"
+    shift 2
+
+    local __sa_variable
+    local __sa_tmp_array
+    for __sa_variable in "$@"
+    do
+        declare -ag "${__sa_variable}" || { ERROR "Invalid variable name: '${__sa_variable}'"; return 2; }
+        declare -n __sa_listref="${__sa_variable}"
+        log FINEST "Appending to list: ${__sa_variable}+='${__sa_list}'"
+        if [ -n "${__sa_separator}" ]
+        then
+            IFS="${__sa_separator}" read -ra __sa_tmp_array <<< "${__sa_list}"
+        else
+            __sa_tmp_array=( "${__sa_list}" )
+        fi
+
+        local __sa_i
+        if [ "${sa_transform_value}" = "envsubst" ]
+        then
+            for __sa_i in ${!__sa_tmp_array[@]}
+            do
+                __sa_tmp_array[${__sa_i}]="$(envsubst <<< "${__sa_tmp_array[${__sa_i}]}")"
+            done
+        elif [ "${sa_transform_value}" = "eval" ]
+        then
+            for __sa_i in ${!__sa_tmp_array[@]}
+            do
+                __sa_tmp_array[${__sa_i}]="$(eval "${__sa_tmp_array[${__sa_i}]}")"
+            done
+        fi
+
+        __sa_listref+=( "${__sa_tmp_array[@]}" )
+    done
+}
+
+# Replace <token> in <input> with <value> (print result in stdout).
+# NOTE that the token should not contain sed regular expressions.
+sa_replace_token() {
+    local input="$1"; shift
+    if [ $(( $# % 2 )) -ne 0 ]
+    then
+        echo "Usage: $FUNCNAME <input> <token> <value> [<token> <value>]..." >&2
+        return 1
+    fi
+    declare -a sed_expressions=()
+    while [ $# -gt 0 ]
+    do
+        local token="$1"
+        local value="$2"
+        local delimiter="$(sa_safe_delimiter "${token}" "${value}")"
+        sed_expressions+=( "-e s${delimiter}${token}${delimiter}${value}${delimiter}g" )
+        shift 2
+    done
+
+    if [ ${#sed_expressions[*]} -gt 0 ]
+    then
+        sed "${sed_expressions[@]}" <<< "${input}"
+    else
+        printf "%s" "${input}"
+    fi
+}
+
+# Variables accepted as options for formatting
+# - sa_prefix (default: "")
+# - sa_suffix (default: "\n")
+# - sa_delim (default: ", ")
+# - sa_last_delim (default: "${sa_delim}")
+# - sa_enclose (default: "")
+# - sa_enclose_pre (default: "${sa_enclose}")
+# - sa_enclose_post (default: "${sa_enclose}")
+# - sa_ellipsis (default: ",...")
+# - sa_ellipsis_suffix (default: "${sa_suffix}")
+# ...for limiting the number of items printed
+# - sa_max_items (default: "-1")
+# - sa_max_length (default: "-1"), (approximate) maximun length of items to print in characters.
+#   This includes characters that enclose the items and characters used in delimiters.
+#   The prefix and suffix texts are excluded.
+#
+# For example,
+# > sa_prefix="Numbers: " sa_delim=", " sa_last_delim=" and " sa_suffix="." sa_concatenate 1 2 3
+# Numbers: 1, 2 and 3.
+# > sa_concatenate 1 2 3
+# 1, 2, 3
+# > sa_enclose="'" sa_concatenate 1 2 3
+# '1', '2', '3'
+# > sa_max_items=2 sa_concatenate 1 2 3
+# 1, 2,...
+sa_concatenate() {
+    # The names 'item' and 'token' separate the bare items (e.g. 'first item')
+    # and the token to be printed (e.g. '\'first item\' ') respectively.
+    # In other words, the token includes the enclosing and delimiter characters.
+    local items_printed=0 total_items=$# item token
+    local sa_delim="${sa_delim-, }"
+    local sa_last_delim="${sa_last_delim-${sa_delim}}"
+    local sa_suffix="${sa_suffix-\n}"
+    local sa_enclose_pre="${sa_enclose_pre-${sa_enclose}}"
+    local sa_enclose_post="${sa_enclose_post-${sa_enclose}}"
+
+    local sa_max_items="${sa_max_items:--1}"
+    local sa_max_length="${sa_max_length:--1}"
+    local sa_ellipsis="${sa_ellipsis-,...}"
+    local sa_ellipsis_suffix="${sa_ellipsis_suffix-${sa_suffix}}"
+
+    #log_vars WARN total_items sa_prefix sa_suffix sa_delim sa_last_delim sa_enclose sa_enclose_pre sa_enclose_post sa_max_items sa_max_length sa_ellipsis sa_ellipsis_suffix >&2
+
+    printf "${sa_prefix}"
+    local chars_printed=0
+    for item in "$@"
+    do
+        # Stop when when maximum number of items is reached.
+        [ "${sa_max_items}" -ge 0 ] && [ "${items_printed}" -eq "${sa_max_items}" ] && break
+
+        if [ "${items_printed}" -eq 0 ]
+        then
+            # First item: print the item only (and the enclosing characters)
+            token="$(printf "%s%s%s" "${sa_enclose_pre}" "${item}" "${sa_enclose_post}")"
+        elif [ "${items_printed}" -eq $((total_items - 1)) ]
+        then
+            # Last item: print the last delimiter and the item (and the enclosing characters)
+            token="$(printf "%s%s%s%s" "${sa_last_delim}" "${sa_enclose_pre}" "${item}" "${sa_enclose_post}")"
+        else
+            # Other items: print the (normal) delimiter and the item (and the enclosing characters)
+            token="$(printf "%s%s%s%s" "${sa_delim}" "${sa_enclose_pre}" "${item}" "${sa_enclose_post}")"
+        fi
+
+        # Print the token if the total length remains within the maximum. Stop otherwise.
+        if [ "${sa_max_length}" -lt 0 ] || [ $(( chars_printed + ${#token} )) -le "${sa_max_length}" ]
+        then
+            printf "%s" "${token}"
+            (( chars_printed += ${#token} ))
+            (( items_printed++ ))
+        else
+            break
+        fi
+    done
+
+    if [ "${items_printed}" -eq "${total_items}" ]
+    then
+        # Print the normal suffix only if all the items are printed.
+        printf "${sa_suffix}"
+    else
+        # Don't print the ellipsis if no items are printed.
+        [ "${items_printed}" -gt 0 ] && printf "${sa_ellipsis}"
+        # Print "an ellipsis suffix". This is by default the same as the "normal suffix"
+        # but can be customized.
+        printf "${sa_ellipsis_suffix}"
+    fi
+}

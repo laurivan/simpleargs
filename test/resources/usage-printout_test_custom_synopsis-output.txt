@@ -1,0 +1,26 @@
+Usage: usage-printout [options] -- [params]...
+Demonstrates simpleargs functionality related to automatically generated
+documentation.
+
+Parameters:
+  <input video>                 Video to be compressed. Only mp4 videos are
+                                supported.
+  <output video>                Compressed output video to be generated.
+  [<log file>]                  Optional log file. If not provided output is
+                                printed to stdout.
+  [<workspace>]                 Workspace to be used. Possible values: 'home',
+                                'work', and 'garage' (default: home).
+  [<socket>]
+
+Options:
+  -p ARG, --port ARG            TCP port used to connect to the server. By
+                                default '8080' is used.
+  -s ARG, --sort ARG, --sort-order ARG
+                                Sort results. The possible sorting criteria
+                                are name, size and date. By default, sort in
+                                ascending order.
+  -k[ARG], --password[=ARG]
+  --operations ARG1:ARG2:...    A list of operations to be executed.
+  [--pattern ARG]...            One or more patterns to be analyzed.
+  --fruit ARG                   Fruit to eat. Possible values: 'apple',
+                                'orange', and 'banana' (default: apple).

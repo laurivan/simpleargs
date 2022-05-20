@@ -1,0 +1,302 @@
+#!/usr/bin/env bash
+
+#|---------------------------- total width -------------------------|
+#  |-- entry_def_width ---||----------- paragraph width ------------|
+#|-option_doc_indentation-|
+#  -p ARG, --port ARG      TCP port used to connect to the server. By
+#                          default '8080' is used.
+#^                   |----|
+#|                     ^
+#|                     |
+#|                     -- separation between definition and paragraph
+#-- entry_indentation
+#
+# > sa_build_indented_entry 80 30 "  " "-p ARG, --port ARG" [<doc paragraph>...]
+# > echo "The resulting entry: ${sa_indented_entry}"
+sa_build_indented_entry() {
+    local total_width="$1"
+    local entry_def_width="$2"
+    local entry_indentation="$3"
+    local def_string="$4" # For example, "-p ARG, --port ARG"
+    shift 4
+    # The minimum number of spaces between def_string and doc paragraph.
+    local min_definition_paragraph_separation=2
+
+    sa_indented_entry=""
+    log FINEST "Building doc entry (${def_string}) with $# lines."
+    log_vars FINEST total_width entry_def_width entry_indentation def_string
+    # Generate string with entry_def_width spaces in it
+    local option_doc_indentation="${entry_indentation}$(printf "%0.1s" $(seq 1 ${entry_def_width}) | sed -r 's/[0-9]/ /g')"
+
+    if [ "$(( ${#def_string} + min_definition_paragraph_separation ))" -gt "${entry_def_width}" ] ||
+           [ -z "$1" ] # Do not print the (trailing) indentation if there is no documentation.
+    then
+        log FINEST "Entry's definition string too long: putting on its own line"
+        sa_indented_entry="$(printf "%s%s" "${entry_indentation}" "${def_string}")"
+    else
+        log FINEST "Entry's definition string short: putting alongside the first doc line: '${1}'"
+        sa_indented_entry="$(printf "%s%-${entry_def_width}s%s" "${entry_indentation}" "${def_string}" "$1")"
+        shift
+    fi
+
+    local line
+    for line in "$@" #while [ -n "$1" ]
+    do
+        log FINEST "Appending doc line: '${line}'"
+        sa_indented_entry="${sa_indented_entry}$(printf "\n%s%s" "${option_doc_indentation}" "${line}")"
+    done
+}
+
+# Folds tokens (strings) given as arguments. That is, prints the tokens on lines
+# with maximum width (given as the first argument). If a token cannot fit within
+# the maximum width specified the token is printed on a single line (even though
+# it exceeds the maximum width).
+#
+# The lines can be indented by setting environment variables specifying
+# the indentation string for each line. For example, calling the function with
+# > sa_fold_indent_1="  " sa_fold_indent_2="    " sa_fold_indent_5="" \
+#   sa_fold_tokens 20 <token>...
+# prints the tokens on lines (hopefully) no more than 20 characters wide.
+# The first line is indented (prefixed) with "  ", the lines 2-4 with "    " and
+# the fifth line and the lines after that have no indentation (since an empty
+# indentation string is specified).
+#
+# Environment variable 'sa_fold_separator' (a single space by default) is used
+# to separate the tokens.
+sa_fold_tokens() {
+    local max_line_width="$1"; shift
+    if [ -z "${max_line_width}" ] || [ ! "${max_line_width}" -eq "${max_line_width}" ]
+    then
+        echo "Usage: ${FUNCNAME} <max line width> <token>..." >&2
+        return 2
+    fi
+
+    local sa_fold_separator="${sa_fold_separator:- }"
+    local token cursor=0 line=1 indent_string_var indent_string
+    for token in "$@"
+    do
+        if [ "${cursor}" -eq 0 ]
+        then
+            # Update indent string if defined for the current line.
+            indent_string_var="sa_fold_indent_${line}"
+            [ -n "${!indent_string_var+defined}" ] && indent_string="${!indent_string_var}"
+
+            # The beginning of line: indent and print the token even if it
+            # exceeds the maximum width.
+            printf "%s%s" "${indent_string}" "${token}"
+            (( cursor += ${#indent_string} + ${#token} ))
+
+            # If there's no more space on the line print newline and update
+            # the cursor position and line number.
+            if [ ${cursor} -ge ${max_line_width} ]
+            then
+                echo; cursor=0; (( line++ ))
+            fi
+        else
+            if [ $(( cursor + ${#token} + ${#sa_fold_separator} )) -gt "${max_line_width}" ]
+            then
+                # The line already contains text and the next token won't fit on it:
+                # print newline and update the cursor position and line number.
+                echo; cursor=0; (( line++ ))
+                # Update indent string if defined for the current line.
+                indent_string_var="sa_fold_indent_${line}"
+                [ -n "${!indent_string_var+defined}" ] && indent_string="${!indent_string_var}"
+
+                # The beginning of line: indent and print the token even if it
+                # exceeds the maximum width.
+                printf "%s%s" "${indent_string}" "${token}"
+                (( cursor += ${#indent_string} + ${#token} ))
+            else
+                # The line already contains text and the next token fits on it as well:
+                # print the separator string and the token.
+                printf "%s%s" "${sa_fold_separator}" "${token}"
+                (( cursor += ${#token} + ${#sa_fold_separator} ))
+            fi
+        fi
+    done
+
+    if [ "${cursor}" -ne 0 ]
+    then
+        # Print the final newline if not in the beginning of a line.
+        echo
+    fi
+    return 0
+}
+
+# sa_script_name=myscript (set by sa_parse)
+# sa_script_long_name="myscript (GNU myscript)"
+# sa_script_version=3.4
+# sa_script_build="build 1.8.0_121"
+sa_display_version() {
+    if [ -n "${sa_script_version}" ]
+    then
+        echo "${sa_script_long_name:-${sa_script_name}} ${sa_script_version}${sa_script_build:+ (${sa_script_build})}"
+    else
+        log ERROR "No version set. Set script version into variable 'sa_script_version'."
+        return 1
+    fi
+}
+
+# Function to be called by the library OR the user script when usage instructions
+# should be shown to the user.
+sa_display_usage() {
+    sa_tic_time "${FUNCNAME}"
+    log FINE "Displaying usage instructions"
+    echo "${sa_synopsis_text}"
+    [ -n "${sa_description_text}" ] && echo "${sa_description_text}"
+    [ -n "${sa_parameters_text}" ] && echo $'\n'"${sa_parameters_text}"
+    [ -n "${sa_options_text}" ] && echo $'\n'"${sa_options_text}"
+    sa_toc_time ${FUNCNAME}; [ "${sa_benchmark}" = "true" ] && sa_print_toc_time ${FUNCNAME}
+    return 0
+}
+
+# Function that prints the usage instructions to stdout. This function is to be
+# called by the library to cache (store) the usage instructions text (to be
+# displayed later by using 'sa_display_usage' function).
+sa_build_usage_instructions() {
+    sa_tic_time "${FUNCNAME}"
+    log FINE "Building usage help"
+    local flag_separator=", "
+    local entry_indentation="  "
+    local total_width=80 # Using $(tput cols) would require disabling cache.
+    local entry_def_width=30
+    local paragraph_width=$(( total_width - entry_def_width - ${#entry_indentation} ))
+    log_vars FINEST flag_separator entry_indentation total_width entry_def_width paragraph_width
+
+    if [ -n "${sa_synopsis_text}" ]
+    then
+        log FINER "Using custom synopsis: '${sa_synopsis_text}'"
+    else
+        log FINER "Building default synopsis with ${#sa_params[@]} parameters"
+        # The standard prefix of synopsis
+        local synopsis_start="Usage: ${sa_script_name}"
+        # Generate a string of n spaces. n is the number of characters in ${synopsis_start} + 1
+        # (for the space that follows ${synopsis_start} in the synopsis.
+        local indent=$(printf "%0.1s" $(seq 1 $(( ${#synopsis_start} + 1)) ) | sed 's/[0-9]/ /g' )
+        # Use the string of spaces to indent tokens from line 2 onwards. For example,
+        # Usage: my-command [OPTION]... <input file> <output file 1> <output file 2>
+        #                               [<log file>]
+        sa_synopsis_text="$(sa_fold_indent_2="${indent}" sa_fold_tokens "${total_width}" "${synopsis_start}" "[OPTION]..." "${sa_params[@]}")"
+    fi
+
+    if [ "${#sa_long_description[@]}" -gt 0 ]
+    then
+        log FINER "Building the first paragraph of long description."
+        sa_description_text="$(echo "${sa_long_description[0]}" | sed -r -e "s/@endshortdoc@.*//" | fmt --width="${total_width}")"
+    else
+        log FINER "Long description not specified"
+    fi
+
+    if [ "${#sa_parammaps[@]}" -gt 0 ]
+    then
+        log FINER "Building parameter definitions"
+        sa_parameters_text="Parameters:"
+        local param_name param
+        for param_name in "${sa_parammaps[@]}"
+        do
+            declare -n param="${param_name}"
+            log FINER "Building param entry for '${param[fullname]}'"
+            plus_indent
+
+            local doc_string=
+            declare -n docarray="${param[docarray]}"
+            unset -v doc_lines
+            if [ "${#docarray[@]}" -gt 0 ]
+            then
+                declare -a valid_values_sed_operation=()
+                if [[ "${docarray[0]}" = *"@{v}"* ]]
+                then
+                    log FINEST "${param_name}: doc contains '@{v}'"
+                    local valid_values_string="$(sa_generate_valid_values_string "${param_name}")" || return
+                    log FINEST "${param_name}: generated valid values string: '${valid_values_string}'"
+                    valid_values_sed_operation+=( "@{v}" "${valid_values_string}" )
+                fi
+
+                doc_string=$(sa_replace_token "${docarray[0]}" "@{d}" "${param[default]}" "@endshortdoc@.*" "" "${valid_values_sed_operation[@]}")
+                log FINEST "Created doc string: '${doc_string}'"
+
+                mapfile -t doc_lines < <(echo "${doc_string}" | fmt --width="${paragraph_width}")
+                log FINEST "Split doc string into ${#doc_lines[@]} lines."
+            else
+                log FINEST "Param doc array is empty, using empty doc string"
+            fi
+
+            sa_build_indented_entry "${total_width}" "${entry_def_width}" "${entry_indentation}" "${param[fullname]}" "${doc_lines[@]}"
+            sa_parameters_text="${sa_parameters_text}"$'\n'"${sa_indented_entry}"
+            minus_indent
+        done
+    fi
+
+    if [ "${#sa_optionmaps[@]}" -gt 0 ]
+    then
+        log FINER "Building option definitions"
+        sa_options_text="Options:"
+        local option_name option
+        for option_name in "${sa_optionmaps[@]}"
+        do
+            declare -n option="${option_name}"
+            log FINER "Building option entry for '${option[fullname]}' (${option[type]})"
+            plus_indent
+            local flag
+            local formatted_flags=()
+            for flag in ${option[flags]}
+            do
+                if [ "${option[type]}" = "optionalvalue" ]
+                then
+                    if [[ "${flag}" == --* ]]
+                    then
+                        # Long flag: --sort
+                        formatted_flags+=( "${flag}[=ARG]" )
+                    else
+                        # Short flag: -s
+                        formatted_flags+=( "${flag}[ARG]" )
+                    fi
+                elif [ "${option[type]}" = "novalue" ]
+                then
+                    formatted_flags+=( "${flag}" )
+                elif [ "${option[type]}" = "value" ]
+                then
+                    formatted_flags+=( "${flag} ARG" )
+                elif [ "${option[type]}" = "multivalue" ]
+                then
+                    if [ "${option[list]}" = "true" ]
+                    then
+                        formatted_flags+=( "${flag} ARG1${option[listseparator]}ARG2${option[listseparator]}..." )
+                    else
+                        formatted_flags+=( "[${flag} ARG]..." )
+                    fi
+                fi
+            done
+            local formatted_flag_string=$(sa_delim="${flag_separator}" sa_suffix="" sa_concatenate "${formatted_flags[@]}")
+
+            local doc_string=
+            declare -n docarray="${option[docarray]}"
+            unset -v doc_lines
+            if [ "${#docarray[@]}" -gt 0 ]
+            then
+                declare -a valid_values_sed_operation=()
+                if [[ "${docarray[0]}" = *"@{v}"* ]]
+                then
+                    log FINEST "${option_name}: doc contains '@{v}'"
+                    local valid_values_string="$(sa_generate_valid_values_string "${option_name}")" || return
+                    log FINEST "${option_name}: generated valid values string: '${valid_values_string}'"
+                    valid_values_sed_operation+=( "@{v}" "${valid_values_string}" )
+                fi
+
+                doc_string=$(sa_replace_token "${docarray[0]}" "@{d}" "${option[default]}" "@endshortdoc@.*" "" "${valid_values_sed_operation[@]}")
+                log FINEST "Created doc string: '${doc_string}'"
+
+                mapfile -t doc_lines < <(echo "${doc_string}" | fmt --width="${paragraph_width}")
+                log FINEST "Split doc string into ${#doc_lines[@]} lines."
+            else
+                log FINEST "Option doc array is empty, using empty doc string"
+            fi
+
+            sa_build_indented_entry "${total_width}" "${entry_def_width}" "${entry_indentation}" "${formatted_flag_string}" "${doc_lines[@]}"
+            sa_options_text="${sa_options_text}"$'\n'"${sa_indented_entry}"
+            minus_indent
+        done
+    fi
+    sa_toc_time ${FUNCNAME}; [ "${sa_benchmark}" = "true" ] && sa_print_toc_time ${FUNCNAME}
+    return 0
+}

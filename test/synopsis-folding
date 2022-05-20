@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+sa_default_tokens=()
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" \
+             "<input file>" \
+             "<output file>" @varname=output_1 \
+             "<output file>" @varname=output_2 \
+             "[<log file>]"
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_folding_synopsis() {
+    # input output1 output2
+    value 0 source_result parse_result process_result
+    sa_display_usage
+    diff <(sa_display_usage) - <<EOF
+Usage: synopsis-folding [OPTION]... <input file> <output file> <output file>
+                        [<log file>]
+
+Parameters:
+  <input file>
+  <output file>
+  <output file>
+  [<log file>]
+EOF
+}

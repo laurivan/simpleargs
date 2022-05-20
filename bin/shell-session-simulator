@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# Allow disabling the output for quick rendering. See bin/build-doc for more details.
+[ "${SA_DOC_QUICK_RENDER}" = "true" ] && exit 0
+
+sa_short_description="print simulated shell session"
+sa_long_description=(
+"Print a simulated shell session. That is, read commands from a file (or stdin) \
+and execute them. Before each command print the prompt statement and the command. \
+The output from the script can be used in documentation as example shell session."
+
+'For example,
+jack:~$ shell-session-simulator -p "$ " <<EOF
+echo foo
+echo bar
+EOF
+$ echo foo
+foo
+$ echo bar
+bar
+jack:~$'
+)
+
+# -------------------------------- simpleargs --------------------------------
+# : ${SIMPLEARGS:=$(dirname "$0")/simpleargs-bundle}
+# : ${SIMPLEARGS:=/usr/lib/simpleargs/simpleargs-bundle}
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+
+sa_parse "$0" \
+         --allow-cache \
+         @doc="Allow simpleargs cache to be used." \
+         --path arg \
+         @doc="Additional PATH entries. The value and a semicolon ':' is \
+simply prepended to PATH environment variable." \
+         --no-command-print \
+         @doc="Omit printing the command (only print possible output)." \
+         --exec-dir arg @@dir \
+         @doc="Directory to execute the commands in." \
+         -c/--command arg @multivalue @varname=commands \
+         @doc="Instead of an input file provide commands one by one \
+(-c command1 -c command2 ...)" \
+         -p/--prompt-statement arg @default="$ " \
+         @doc="Prompt string used (corresponds to PS1). Default: '@{d}'." \
+         --verbose @onvalue=INFO @offvalue=OFF \
+         @doc="Print debug messages about script's progress." \
+         "[<input file>]" @default="-" \
+         @doc="Input file (or stdin if omitted) to read commands to be executed."
+
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------
+
+log_level=${verbose}
+tmp_input_file=/tmp/${sa_script_name}-$$
+
+if ${allow_cache}
+then
+    log INFO "Cache is allowed"
+    export sa_use_cache=true
+else
+    export sa_use_cache=false
+fi
+
+if [ -n "${path}" ]
+then
+    export PATH="${path}:${PATH}"
+    log INFO "PATH: '${PATH}'"
+fi
+log INFO "$(which "${sa_script_name}")"
+
+if [ ${#commands[@]} -gt 0 ]
+then
+    log INFO "Using commands specified with -c/--command"
+    {
+        for command_string in "${commands[@]}"
+        do
+            printf "%s\n" "${command_string}"
+        done
+    } > "${tmp_input_file}"
+    input_file="${tmp_input_file}"
+elif [ "${input_file}" = "-" ]
+then
+    log INFO "No input file provided: using stdin as input"
+
+    cat > "${tmp_input_file}"
+    input_file="${tmp_input_file}"
+fi
+
+[ -f "${input_file}" ] || { echo "ERROR: No such input file: '${input_file}'"; exit 0; }
+
+[ -d "${exec_dir}" ] && cd "${exec_dir}"
+log INFO "Starting to read commands from '${input_file}'"
+while read -r line
+do
+    if ${no_command_print}
+    then
+        :
+    else
+        printf "%s%s\n" "${prompt_statement}" "${line}"
+    fi
+    eval "${line}" 2>&1 | fold -w 80
+done < "${input_file}"
+
+# Clean up
+[ -f "${tmp_input_file}" ] && rm "${tmp_input_file}"
+
+exit 0

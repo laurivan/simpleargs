@@ -1,0 +1,523 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0"
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_sa_args_contain_empty() {
+    #
+    sa_args_contain "" && false
+    sa_args_contain "foo" && false
+}
+
+test_sa_args_contain_value() {
+    #
+    sa_args_contain "" first second third && false
+    sa_args_contain "foobar" foobar
+    sa_args_contain "foobar" fooba && false
+    sa_args_contain "first" first second third
+    sa_args_contain "second" first second third
+    sa_args_contain "third" first second third
+
+    sa_args_contain "second third" first second third && false
+    sa_args_contain "" first second third && false
+    sa_args_contain "foo" first second && false
+}
+
+test_sa_array_contains_empty() {
+    #
+    emptyarray=()
+    sa_array_contains emptyarray "" && false
+    sa_array_contains emptyarray "foo" && false
+}
+
+test_sa_array_contains_empty_value() {
+    #
+    arraywithempty=("" somes other)
+    sa_array_contains arraywithempty "" || false
+    sa_array_contains arraywithempty " " && false
+    sa_array_contains arraywithempty "some" && false
+}
+
+test_sa_array_contains_normal() {
+    #
+    testarray=(first second "some spaces" spaces)
+    sa_array_contains testarray "" && false
+    sa_array_contains testarray "some" && false
+    sa_array_contains testarray "some " && false
+    sa_array_contains testarray " spaces" && false
+    sa_array_contains testarray "some spaces " && false
+    sa_array_contains testarray " some spaces" && false
+    sa_array_contains testarray "not there" && false
+    sa_array_contains testarray "foobar" && false
+    sa_array_contains testarray "first" || false
+    sa_array_contains testarray "second" || false
+    sa_array_contains testarray "some spaces" || false
+    sa_array_contains testarray "spaces" || false
+}
+
+test_sa_array_contains_envsubst() {
+    #
+    export VAR1=value1
+    export VAR2=value2
+    export VAR3="value with space"
+    export VAR4='${VAR5}'
+    export VAR5="foo"
+
+    testarray=( '${VAR1}' 'my ${VAR4}' '${VAR3}' last )
+    sa_transform_arrayvalue=envsubst sa_array_contains testarray value1 || false
+    sa_transform_arrayvalue=envsubst sa_array_contains testarray 'my ${VAR5}' || false
+    sa_transform_arrayvalue=envsubst sa_array_contains testarray "value with space" || false
+    sa_transform_arrayvalue=envsubst sa_array_contains testarray "last" || false
+
+    sa_transform_arrayvalue=envsubst sa_array_contains testarray '${VAR1}' && false
+    sa_transform_arrayvalue=envsubst sa_array_contains testarray 'my ${VAR4}' && false
+    sa_transform_arrayvalue=envsubst sa_array_contains testarray "foo" && false
+    sa_transform_arrayvalue=envsubst sa_array_contains testarray "value" && false
+    sa_transform_arrayvalue=envsubst sa_array_contains testarray "value2" && false
+}
+
+test_sa_array_contains_eval() {
+    #
+    export VAR1='echo "hi"'
+
+    testarray=( 'echo "hello world"' 'echo "${VAR1}"' "echo normal" )
+    sa_transform_arrayvalue=eval sa_array_contains testarray "hello world" || false
+    sa_transform_arrayvalue=eval sa_array_contains testarray 'echo "hi"' || false
+    sa_transform_arrayvalue=eval sa_array_contains testarray "normal" || false
+    sa_transform_arrayvalue=eval sa_array_contains testarray "hi" && false
+    sa_transform_arrayvalue=eval sa_array_contains testarray "echo normal" && false
+}
+
+test_sa_array_contains_invalid_transform() {
+    #
+    testarray=( first second )
+    sa_transform_arrayvalue=invalid-value sa_array_contains testarray first || return_code=$?
+    [ "${return_code}" = "${SA_INTERNAL_ERROR}" ]
+}
+
+test_sa_map_contains_empty() {
+    #
+    declare -A map=()
+    sa_map_contains_key map "" && false
+    sa_map_contains_key map " " && false
+    sa_map_contains_value map "" && false
+    sa_map_contains_value map " " && false
+}
+
+test_sa_map_contains_empty_value() {
+    #
+    declare -A map=( [a]="" [b]=value [key with spaces]="spaces in value" )
+    sa_map_contains_key map "" && false
+    sa_map_contains_key map " " && false
+    sa_map_contains_key map "a " && false
+    sa_map_contains_key map " a" && false
+    sa_map_contains_key map "key" && false
+    sa_map_contains_key map "with" && false
+    sa_map_contains_key map "spaces" && false
+
+    sa_map_contains_key map "a" || false
+    sa_map_contains_key map "b" || false
+    sa_map_contains_key map "key with spaces" || false
+
+    sa_map_contains_value map "" || false
+    sa_map_contains_value map " " && false
+
+    sa_map_contains_value map "spaces" && false
+    sa_map_contains_value map "in" && false
+    sa_map_contains_value map "" || false
+    sa_map_contains_value map "value" || false
+    sa_map_contains_value map "spaces in value" || false
+}
+
+test_sa_print_stack_trace() {
+    #
+    sa_print_stack_trace
+}
+
+test_sa_concatenate_simple() {
+    #
+    sa_concatenate 1 2 3
+    export -f sa_concatenate
+    diff <(printf "\n") <(sa_concatenate) || false
+    diff <(printf "1\n") <(sa_concatenate 1) || false
+    diff <(printf "1, 2\n") <(sa_concatenate 1 2) || false
+    diff <(printf "1, 2, 3\n") <(sa_concatenate 1 2 3) || false
+
+    diff <(printf "") <(sa_suffix="" sa_concatenate) || false
+    diff <(printf "1") <(sa_suffix="" sa_concatenate 1) || false
+    diff <(printf "1, 2") <(sa_suffix="" sa_concatenate 1 2) || false
+    diff <(printf "1, 2, 3") <(sa_suffix="" sa_concatenate 1 2 3) || false
+
+    diff <(printf "Numbers: 1, 2, 3") <(sa_prefix="Numbers: " sa_suffix="" sa_concatenate 1 2 3) || false
+    diff <(printf "Numbers: 1, 2, 3...") <(sa_prefix="Numbers: " sa_suffix="..." sa_concatenate 1 2 3) || false
+}
+
+test_sa_concatenate_simple_max_items() {
+    #
+    export -f sa_concatenate
+    diff <(printf "\n") <(sa_max_items=0 sa_concatenate) || false
+    diff <(printf "\n") <(sa_max_items=1 sa_concatenate) || false
+    diff <(printf "\n") <(sa_max_items=2 sa_concatenate) || false
+
+    diff <(printf "\n") <(sa_max_items=0 sa_concatenate 1) || false
+    diff <(printf "1\n") <(sa_max_items=1 sa_concatenate 1) || false
+    diff <(printf "1\n") <(sa_max_items=2 sa_concatenate 1) || false
+
+    diff <(printf "\n") <(sa_max_items=0 sa_concatenate 1 2) || false
+    diff <(printf "1,...\n") <(sa_max_items=1 sa_concatenate 1 2) || false
+    diff <(printf "1, 2\n") <(sa_max_items=2 sa_concatenate 1 2) || false
+    diff <(printf "1, 2\n") <(sa_max_items=3 sa_concatenate 1 2) || false
+}
+
+test_sa_concatenate_delims() {
+    #
+    export -f sa_concatenate
+
+    diff <(printf "\n") <(sa_delim=":" sa_concatenate) || false
+    diff <(printf "1\n") <(sa_delim=":" sa_concatenate 1) || false
+    diff <(printf "1:2\n") <(sa_delim=":" sa_concatenate 1 2) || false
+    diff <(printf "1:2:3\n") <(sa_delim=":" sa_concatenate 1 2 3) || false
+
+    diff <(printf "\n") <(sa_delim="; " sa_concatenate) || false
+    diff <(printf "1\n") <(sa_delim="; " sa_concatenate 1) || false
+    diff <(printf "1; 2\n") <(sa_delim="; " sa_concatenate 1 2) || false
+    diff <(printf "1; 2; 3\n") <(sa_delim="; " sa_concatenate 1 2 3) || false
+
+    diff <(printf "") <(sa_last_delim=", and " sa_suffix="" sa_concatenate) || false
+    diff <(printf "1") <(sa_last_delim=", and " sa_suffix="" sa_concatenate 1) || false
+    diff <(printf "1, and 2") <(sa_last_delim=", and " sa_suffix="" sa_concatenate 1 2) || false
+    diff <(printf "1, 2, and 3") <(sa_last_delim=", and " sa_suffix="" sa_concatenate 1 2 3) || false
+    diff <(printf "1, 2, 3, and 4") <(sa_last_delim=", and " sa_suffix="" sa_concatenate 1 2 3 4) || false
+}
+
+test_sa_concatenate_whitespace_etc() {
+    #
+    export -f sa_concatenate
+
+    diff <(printf "one two, three four, and five six") <(sa_last_delim=", and " sa_suffix="" sa_concatenate "one two" "three four" "five six") || false
+    diff <(printf "'one two', 'three four', and 'five six'") <(sa_enclose="'" sa_last_delim=", and " sa_suffix="" sa_concatenate "one two" "three four" "five six") || false
+    diff <(printf "\`one two', \`three four', and \`five six'") <(sa_enclose_pre='`' sa_enclose_post="'" sa_last_delim=", and " sa_suffix="" sa_concatenate "one two" "three four" "five six") || false
+}
+
+test_sa_concatenate_complex_max_length() {
+    #
+    export -f sa_concatenate
+
+    diff <(printf "first, second, third\n") <(sa_concatenate first second third)
+    diff <(printf "\n") <(sa_max_length=0 sa_concatenate first second third)
+    diff <(printf "\n") <(sa_max_length=1 sa_concatenate first second third)
+    diff <(printf "\n") <(sa_max_length=2 sa_concatenate first second third)
+    diff <(printf "\n") <(sa_max_length=4 sa_concatenate first second third)
+    diff <(printf "first,...\n") <(sa_max_length=5 sa_concatenate first second third)
+    diff <(printf "first,...\n") <(sa_max_length=6 sa_concatenate first second third)
+    diff <(printf "first,...\n") <(sa_max_length=12 sa_concatenate first second third)
+    diff <(printf "first, second,...\n") <(sa_max_length=13 sa_concatenate first second third)
+    diff <(printf "first, second,...\n") <(sa_max_length=14 sa_concatenate first second third)
+    diff <(printf "first, second,...\n") <(sa_max_length=19 sa_concatenate first second third)
+    diff <(printf "first, second, third\n") <(sa_max_length=20 sa_concatenate first second third)
+    diff <(printf "first, second, third\n") <(sa_max_length=21 sa_concatenate first second third)
+    diff <(printf "first, second, third\n") <(sa_max_length=100 sa_concatenate first second third)
+}
+
+test_sa_concatenate_complex_max_length_and_items() {
+    #
+    export -f sa_concatenate
+
+    diff <(printf "first, second, third\n") <(sa_concatenate first second third)
+    diff <(printf "\n") <(sa_max_length=4 sa_max_items=10 sa_concatenate first second third)
+    diff <(printf "\n") <(sa_max_length=100 sa_max_items=0 sa_concatenate first second third)
+
+    diff <(printf "first,...\n") <(sa_max_length=5 sa_max_items=5 sa_concatenate first second third)
+
+    diff <(printf "first, second,...\n") <(sa_max_length=13 sa_concatenate first second third)
+    diff <(printf "first,...\n") <(sa_max_length=13 sa_max_items=1 sa_concatenate first second third)
+
+    diff <(printf "first, second,...\n") <(sa_max_length=14 sa_concatenate first second third)
+    diff <(printf "\n") <(sa_max_length=14 sa_max_items=0 sa_concatenate first second third)
+    diff <(printf "first,...\n") <(sa_max_length=14 sa_max_items=1 sa_concatenate first second third)
+    diff <(printf "first, second,...\n") <(sa_max_length=14 sa_max_items=2 sa_concatenate first second third)
+    diff <(printf "first, second,...\n") <(sa_max_length=14 sa_max_items=3 sa_concatenate first second third)
+}
+
+test_sa_concatenate_ellipsis_and_suffix() {
+    #
+    export -f sa_concatenate
+
+    diff <(printf "first, second, third.") <(sa_suffix="." sa_ellipsis_suffix="" sa_concatenate first second third)
+    diff <(printf "first,...") <(sa_max_items=1 sa_suffix="." sa_ellipsis_suffix="" sa_concatenate first second third)
+    diff <(printf "first, second, ..., etc.") <(sa_max_items=2 sa_ellipsis=", ..."  sa_suffix="." sa_ellipsis_suffix=", etc." sa_concatenate first second third)
+}
+
+test_sa_assign_static() {
+    #
+    sa_assign "foo" name1
+    value "foo" name1
+
+    sa_assign "foo2" name1 name2
+    value "foo2" name1
+
+    sa_assign "foo and bar" name3 name4 name5
+    value "foo and bar" name3 name4 name5
+
+    sa_assign "" name3
+    empty name3
+    value "foo and bar" name4 name5
+
+    export VAR1=value1
+    sa_assign 'my ${VAR1}' name6
+    value 'my ${VAR1}' name6
+}
+
+test_sa_assign_empty() {
+    #
+    sa_assign "" name1
+    [ -z "${name1}" ]
+    [ "${name1+set}" = "set" ]
+
+    sa_assign "" name2 name3
+    [ -z "${name2}" ]
+    [ "${name2+set}" = "set" ]
+    [ -z "${name3}" ]
+    [ "${name3+set}" = "set" ]
+
+    [ "${name4+set}" = "" ]
+}
+
+test_sa_assign_envsubst() {
+    #
+    export VAR1=value1
+    export VAR2="value number 2"
+    export VAR3='${VAR4}'
+    export VAR4=foo
+
+    sa_transform_value=envsubst sa_assign 'my ${VAR1}' name1
+    value "my value1" name1
+
+    sa_transform_value=envsubst sa_assign 'your ${VAR2}' name2
+    value "your value number 2" name2
+
+    sa_transform_value=envsubst sa_assign 'his ${VAR3}' name3
+    value 'his ${VAR4}'  name3
+}
+
+test_sa_assign_eval() {
+    #
+    export VAR1='echo "hi"'
+    sa_transform_value=eval sa_assign 'echo "hello world"' name1 name2
+    value "hello world" name1 name2
+
+    sa_transform_value=eval sa_assign 'hello ${USER}' || true
+
+    sa_transform_value=eval sa_assign 'echo "${VAR1}"' name3
+    value 'echo "hi"' name3
+}
+
+test_sa_assign_list_static() {
+    #
+    sa_assign_list first,second,third , name1
+    arrayvalue name1 first second third
+
+    sa_assign_list first,second,third , name2 name3
+    arrayvalue name2 first second third
+    arrayvalue name3 first second third
+
+    sa_assign_list "" , name4
+    arrayvalue name4
+
+    sa_assign_list "foo,foo and, foo and bar  ,baar" , name5
+    arrayvalue name5 foo "foo and" " foo and bar  " baar
+
+    sa_assign_list "foo,bar;foobar list; ;    ;values 1,2,3" ";" name6
+    arrayvalue name6 "foo,bar" "foobar list" " " "    " "values 1,2,3"
+
+    sa_assign_list "first second third" " " name6
+    arrayvalue name6 first second third
+}
+
+test_sa_assign_list_single_value() {
+    #
+    sa_assign_list "only" "" name1
+    arrayvalue name1 only
+
+    sa_assign_list "first second" "" name2
+    arrayvalue name2 "first second"
+
+    sa_assign_list "first,second" "" name3
+    arrayvalue name3 "first,second"
+}
+
+test_sa_assign_empty_list() {
+    #
+    sa_assign_list "" , name1
+    arrayvalue name1
+
+    sa_assign_list "" "" name2
+    arrayvalue name2
+}
+
+test_sa_assign_list_envsubst() {
+    #
+    export VAR1=value1
+    export VAR2=value2
+    export VAR3="value with spaces"
+    export VAR4='${VAR5}'
+    export VAR5=foo
+
+    sa_transform_value=envsubst sa_assign_list 'first,${VAR3},${VAR2},and ${VAR1},${VAR4}' , name1 name2
+    arrayvalue name1 first "value with spaces" value2 "and value1" '${VAR5}'
+    arrayvalue name2 first "value with spaces" value2 "and value1" '${VAR5}'
+
+    sa_transform_value=envsubst sa_assign_list 'first ${VAR3},${VAR2},and ${VAR1},${VAR4}' "" name3 name4
+    arrayvalue name3 'first value with spaces,value2,and value1,${VAR5}'
+    arrayvalue name4 'first value with spaces,value2,and value1,${VAR5}'
+}
+
+test_sa_assign_list_eval() {
+    #
+    export VAR1="value1 with comma, in it"
+
+    sa_transform_value=eval sa_assign_list 'echo hello,echo my ${VAR1},ls -d /tmp' , name1 name2
+    arrayvalue name1 "hello" "my value1 with comma, in it" "/tmp"
+}
+
+test_sa_append_to_list_static() {
+    #
+    sa_append_to_list first , name1
+    arrayvalue name1 first
+
+    sa_append_to_list first , name1
+    arrayvalue name1 first first
+
+    sa_append_to_list first,second,third , name1
+    arrayvalue name1 first first first second third
+
+    sa_append_to_list "first,second,third;fourth;fifth sixth; seventh" ";" name1 name2
+    arrayvalue name1 first first first second third first,second,third fourth "fifth sixth" " seventh"
+    arrayvalue name2 first,second,third fourth "fifth sixth" " seventh"
+}
+
+test_sa_append_to_list_single() {
+    #
+    sa_append_to_list first,second "" name1 name2
+    arrayvalue name1 first,second
+    arrayvalue name2 first,second
+}
+
+test_sa_append_to_list_envsubst() {
+    #
+    export VAR1=value1
+    export VAR2=value2
+    export VAR3="value with spaces"
+    export VAR4='${VAR5}'
+    export VAR5=foo
+
+    sa_transform_value=envsubst sa_append_to_list '${VAR1}' , name1
+    arrayvalue name1 "value1"
+
+    sa_transform_value=envsubst sa_append_to_list '${VAR4},${VAR1} ${VAR1}' , name1
+    arrayvalue name1 "value1" '${VAR5}' "value1 value1"
+
+    sa_transform_value=envsubst sa_append_to_list '${VAR1},${VAR3},my $VAR2' , name1
+    arrayvalue name1 "value1" '${VAR5}' "value1 value1" "value1" "value with spaces" "my value2"
+
+    sa_transform_value=envsubst sa_append_to_list '${VAR1}:foo' ":" name1 name2
+    arrayvalue name1 "value1" '${VAR5}' "value1 value1" "value1" "value with spaces" "my value2" "value1" "foo"
+    arrayvalue name2 "value1" "foo"
+}
+
+test_sa_append_to_list_eval() {
+    #
+    export VAR1=value1
+    export VAR2=value2
+    export VAR3="value with colon ':' in it"
+    export VAR4='echo "hi"'
+
+    sa_transform_value=eval sa_append_to_list 'echo "${VAR4}",echo ${VAR1}' , name1
+    arrayvalue name1 'echo "hi"' "value1"
+
+    sa_transform_value=eval sa_append_to_list 'echo ${VAR1}:echo "my ${VAR3}"' ":" name1
+    arrayvalue name1 'echo "hi"' "value1" "value1" "my value with colon ':' in it"
+}
+
+test_sa_safe_delimiter() {
+    #
+    equals "/" "$(sa_safe_delimiter)"
+    equals "/" "$(sa_safe_delimiter "")"
+    equals "/" "$(sa_safe_delimiter "" "")"
+    equals "/" "$(sa_safe_delimiter "value without special characters")"
+    equals "/" "$(sa_safe_delimiter "value" "without" "special characters")"
+    equals "|" "$(sa_safe_delimiter "this/that")"
+    equals "|" "$(sa_safe_delimiter "this" "or/that")"
+
+    equals "#" "$(sa_safe_delimiter "this" "or/that" "pipe | in between")"
+    equals "@" "$(sa_safe_delimiter "a lot of special characters: /|#")"
+    equals "%" "$(sa_safe_delimiter "a lot of special characters: /|#@")"
+    equals "+" "$(sa_safe_delimiter "one more % and /|#@")"
+    equals "0" "$(sa_safe_delimiter "out of chars? +++ one more % and /|#@")"
+    equals "1" "$(sa_safe_delimiter "0 out of chars? +++ one more % and /|#@")"
+    equals "a" "$(sa_safe_delimiter "0123456789 ? +++ %/|#@")"
+    equals "j" "$(sa_safe_delimiter "0123456789 abcdefghi out of chars? +++ one more % and /|#@")"
+}
+
+test_sa_replace_token() {
+    #
+    # No replacement
+    equals ABC "$(sa_replace_token ABC)"
+    equals -e "$(sa_replace_token -e)"
+    equals --foobar "$(sa_replace_token --foobar)"
+    equals "*" "$(sa_replace_token "*")"
+    equals "* AB" "$(sa_replace_token "* AB")"
+    equals "star AB" "$(sa_replace_token "* AB" "*" "star")"
+
+    # Simple replacing
+    equals ADC "$(sa_replace_token ABC B D)"
+    equals ADCD "$(sa_replace_token ABCB B D)"
+    equals "A D C" "$(sa_replace_token "A B C" B D)"
+    equals "D B C" "$(sa_replace_token "AA B C" AA D)"
+    equals '/pipeA B Cpipe\' "$(sa_replace_token '/|A B C|\' '|' 'pipe')"
+    equals "A default B C" "$(sa_replace_token "A @{d} B C" "@{d}" default)"
+
+    # Multiple replacement
+    equals "A default B value C" "$(sa_replace_token "A @{d} B @{v} C" "@{d}" default "@{v}" value)"
+
+    # Recursive replacement
+    equals "A YYY Y D" "$(sa_replace_token "A B C D" B CCC C Y)"
+    equals "A RR D" "$(sa_replace_token "A BC D" BC RR C Y)"
+
+    # Misuse
+    sa_replace_token "A B C" "B" && false
+}
+
+print-animals() {
+    cat <<EOF
+cow
+sheep
+horse
+pig
+EOF
+}
+
+test_sa_generate_valid_values_string() {
+    #
+    #before printf "apple\norange\nbanana\n" > ${sa_test_dir}/fruits.txt
+    sa_generate_valid_values_string "" && false
+
+    validvalues1=( a b c "d and e" )
+    declare -Ag entry1=( [validvaluesarray]=validvalues1 )
+    equals "'a', 'b', 'c', and 'd and e'" "$(sa_generate_valid_values_string entry1)"
+
+    declare -Ag entry2=( [validvaluesfile]="${sa_test_dir}/fruits.txt" )
+    equals "'apple', 'orange', and 'banana'" "$(sa_generate_valid_values_string entry2)"
+
+    declare -Ag entry3=( [validvaluescommand]=print-animals )
+    equals "'cow', 'sheep', 'horse', and 'pig'" "$(sa_generate_valid_values_string entry3)"
+}

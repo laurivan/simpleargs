@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+log_level=${log_level:-WARN}
+#log_indent_enabled=${log_indent_enabled:-false}
+#log_display_level=${log_display_level:-false}
+#log_enable_colors=${log_enable_colors:-false}
+
+# -------------------------------- simpleargs --------------------------------
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+sa_parse "$0" \
+         --file arg @@file \
+         --not-file arg @@!file \
+         --int arg @@int \
+         --int-range arg @@int 0..5 \
+         --not-int arg @@!int \
+         --not-int-range arg @@!int 0.. \
+         --port arg @@port \
+         --not-port arg @@!port \
+         --float arg @@float \
+         --float-range arg @@float 0.1..2.3 \
+         --not-float arg @@!float \
+         --not-float-range arg @@"!float -1.0e1..+1.0e-1"
+
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------

@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+# -------------------------------- simpleargs --------------------------------
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+sa_parse "$0" \
+    -p/--part atmega328p@default,attiny85,promini \
+    -b/--baudrate 9600,57600,115200 @default=57600 \
+    --pass @@egrep '^[0-9]+$' @default=46080 \
+    --point piste @:/validvalues="0,0:1,1@default:4,3" \
+    -a/--ages @@int 18..50 @,/multivalue @default=20,31,33
+
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------
+
+#sa_dump_option_attributes INFO
+#sa_dump_getopt_strings INFO
+#sa_debug_dump INFO
+#sa_dump_params INFO
+#sa_dump_param_attributes INFO
+
+log_level=INFO
+log_vars INFO "# Flags" p p_default part part_default b b_default baudrate baudrate_default pass pass_default point piste point_default piste_default a a_default ages ages_default

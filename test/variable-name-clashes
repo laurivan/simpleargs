@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" --mapname arg \
+             --flag arg @validvalues=one,two,three \
+             --port arg @default=8080 @@int \
+             --option arg \
+             --param arg \
+             --parameter arg \
+             --opt arg \
+             --default arg @default=my-default \
+             --processing-queue arg \
+             --value arg \
+             --param-value arg \
+             --flagvar arg \
+             --variable arg \
+             --tmp-variable arg \
+             "<input>" @doc="Input file" @@glob "*.txt"
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+# Tests whether simpleargs utility functions litter the
+# shell with temporary variables.
+test_one_arg() {
+    # --mapname my-little-map --flag one --port 80 --param abc --parameter efg --opt 12 --default 100 --processing-queue my-queue --value my-value --param-value my-param-value --flagvar my-flagvar --variable my-variable --tmp-variable my-tmp-variable in.txt
+    value 0 source_result parse_result process_result
+    log_level=INFO
+    sa_debug_dump INFO
+    value my-little-map mapname
+    value one flag
+    value abc param
+    value efg parameter
+    value 12 opt
+    value 100 default
+    value my-queue processing_queue
+    value my-value value
+    value my-param-value param_value
+    value my-flagvar flagvar
+    value my-variable variable
+    value my-tmp-variable tmp_variable
+    [ $# -eq 0 ]
+}

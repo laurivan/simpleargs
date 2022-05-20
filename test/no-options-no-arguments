@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0"; parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_no_arguments() {
+    #
+    value 0 source_result parse_result process_result
+    [ $# -eq 0 ]
+}
+
+test_one_positional_argument() {
+    # first
+    value 0 source_result parse_result process_result
+    [ $# -eq 1 ]
+    [ "$1" = first ]
+    [ -z "$2" ]
+}
+
+test_two_positional_arguments() {
+    # first second
+    value 0 source_result parse_result process_result
+    [ $# -eq 2 ]
+    [ "$1" = first ]
+    [ "$2" = second ]
+    [ -z "$3" ]
+}
+
+test_three_positional_arguments() {
+    # first second third
+    value 0 source_result parse_result process_result
+    [ $# -eq 3 ]
+    [ "$1" = first ]
+    [ "$2" = second ]
+    [ "$3" = third ]
+    [ -z "$4" ]
+}
+
+test_positional_arguments_with_spaces() {
+    # "first parameter" "and the second one" third "fourth with    more spaces"
+    value 0 source_result parse_result process_result
+    [ $# -eq 4 ]
+    [ "$1" = "first parameter" ]
+    [ "$2" = "and the second one" ]
+    [ "$3" = third ]
+    [ "$4" = "fourth with    more spaces" ]
+    [ -z "$5" ]
+}
+
+# No options defined, but option provided on command line -> fail
+test_unknown_short_option() {
+    # -u
+    value 0 source_result parse_result
+    value ${SA_PROCESS_GETOPT_FAILED} process_result
+}
+
+# No options defined, but option provided on command line -> fail
+test_unknown_long_option() {
+    # --user
+    value 0 source_result parse_result
+    value ${SA_PROCESS_GETOPT_FAILED} process_result
+}
+
+test_quotes_in_arguments() {
+    # '"' "\"\""
+    value 0 source_result parse_result process_result
+    [ $# -eq 2 ]
+    [ "$1" = "\"" ]
+    [ "$2" = '""' ]
+}
+
+test_empty_argument() {
+    # ''
+    value 0 source_result parse_result process_result
+    [ $# -eq 1 ]
+    [ "$1" = "" ]
+}

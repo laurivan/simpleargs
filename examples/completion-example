@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+
+log_level=${log_level:-INFO}
+# -------------------------------- simpleargs --------------------------------
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+sa_parse "$0" \
+         -s/--simple-name james,jannis,john,jeff,peter,perto \
+         -b/--brothers matt,hugh,hank,harry @,/multivalue \
+         --sisters "mary kate,lilly laura,little lana" \
+         "<mode>" @validvalues=move,copy,remove
+
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------
+
+${sa_option_b__brothers[on]} && log_vars_in_array WARN brothers
+log_vars INFO simple_name sisters mode
+
+log_vars INFO sa_options sa_flags sa_optionmaps sa_fullnames sa_mapnames sa_params sa_parammaps sa_varnames sa_option_s__simple_name sa_param_mode

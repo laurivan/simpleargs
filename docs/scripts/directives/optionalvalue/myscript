@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+# -------------------------------- simpleargs --------------------------------
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+sa_parse "$0" -s/--sort sort_criteria @optionalvalue @default=none
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------
+# ...
+if [ "${sort_criteria}" = "none" ]; then
+    echo "no sorting"
+elif [ "${sort_criteria}" = "" ] ||
+     [ "${sort_criteria}" = "alphabetical" ]; then
+    echo "sorting alphabetically"
+elif [ "${sort_criteria}" = "time" ]; then
+    echo "sorting by time"
+fi

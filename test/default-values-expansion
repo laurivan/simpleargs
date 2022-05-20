@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" \
+             -n/--name 'tim,tom,${USER}@default' \
+             --home @default='${HOME}' \
+             --config @default='${TMP}/sa-test-default-values-expansion' \
+             @@dir
+
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_explicit() {
+    # -n tim --home /opt/tim --config /tmp/sa-test-default-values-expansion-explicit
+    #before mkdir /tmp/sa-test-default-values-expansion-explicit
+    #after rmdir /tmp/sa-test-default-values-expansion-explicit
+    value 0 source_result parse_result process_result
+    value tim n name
+    value /opt/tim home
+    [ $# -eq 0 ]
+}
+
+test_default_value_validation() {
+    # -n tim --home /opt/tim
+    value 0 source_result parse_result
+    # Validation fails because the default value for --config fails (directory does not exist)
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}
+
+test_default_expansion_and_validation() {
+    #
+    #before mkdir /tmp/sa-test-default-values-expansion
+    #before export TMP=/tmp
+    #after rmdir /tmp/sa-test-default-values-expansion
+    value 0 source_result parse_result process_result
+    value ${USER} n name
+    value ~ home
+    [ $# -eq 0 ]
+}

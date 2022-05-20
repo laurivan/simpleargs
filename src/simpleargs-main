@@ -1,0 +1,721 @@
+#!/usr/bin/env bash
+# simpleargs-main
+
+# sa_toc_time call is inserted by the build (see bin/build) to the end of the bundle.
+sa_tic_time sourcing_simpleargs
+
+[ -z "${HOME}" ] && {
+    echo "ERROR: \${HOME} is not set" >&2
+    exit 1
+}
+[ -d "${HOME}" ] || {
+    echo "ERROR: \${HOME} is not a directory: ${HOME}" >&2
+    exit 1
+}
+
+# By default '-p/--tcp-port 8080' initializes '$p' and '$tcp_port' (not e.g. '$_p')
+sa_varname_prefix=""
+sa_config_dir=${HOME}/.simpleargs.d
+sa_cached_options_dir="${sa_config_dir}/cached"
+sa_manpage_dir="${sa_config_dir}/bin/man/man1"
+sa_completed_scripts_dir="${sa_config_dir}/completed-scripts"
+sa_tmp_dir="${sa_config_dir}/tmp"
+
+# Configuration options
+sa_user_settings="${sa_user_settings:-${HOME}/.simpleargs.conf}"
+sa_global_settings="${sa_global_settings:-/etc/simpleargs.conf}"
+if [ -f "${sa_user_settings}" ]
+then
+    . "${sa_user_settings}" || return 1
+fi
+if [ -f "${sa_global_settings}" ]
+then
+    . "${sa_global_settings}" || return 1
+fi
+
+# After parsing argument definitions write the resulting data structures into
+# a cache file. When invoking the script again check if the the cache file is
+# up to date (newer than the script file itself) and if yes, read the cache
+# file instead of parsing the definitons again.
+sa_use_cache=${sa_use_cache:-true}
+# Use the argument definitions to generate a manual page for the script.
+sa_generate_man_page=${sa_generate_man_page:-true}
+# Use the argument definitions to generate Bash completion rules for the script.
+sa_use_completion=${sa_use_completion:-true}
+# Terminate the script after parsing the argument definitions. This can be used
+# e.g. to update the manual page of the script. That is, invoking the script like
+# > sa_parse_only=true my-command
+# will write the cache file, manual page and Bash completion rules but does not
+# execute the script further.
+sa_parse_only=${sa_parse_only:-false}
+# Exit the script if parsing the argument definitions fails. Exiting the script
+# is the default behaviour and should only be changed for debugging purposes.
+sa_exit_on_parse_failure=${sa_exit_on_parse_failure:-true}
+# Exit the script if processing the (command line) arguments fail. That is, if
+# the user provided erroneous arguments: e.g. missing positional parameters or
+# invalid values for the options. Exiting the script is the default behaviour
+# and should only be changed for debugging purposes.
+sa_exit_on_process_failure=${sa_exit_on_process_failure:-true}
+# What to do when processing of arguments fails: 'none', 'display-usage' or
+# 'display-synopsis'
+sa_process_failure_action=${sa_process_failure_action:-display-synopsis}
+# Turn on printing of benchmark figures of certain simpleargs library functions.
+sa_benchmark=${sa_benchmark:-false}
+# Logging level used by the logging library. The logging library is used
+# internally by simpleargs but can also be used by the user script.
+log_level=${log_level:-WARN}
+# The maximum number of items to print in an error message for an argument
+# that defines a set of valid values.
+sa_print_max_valid_values=${sa_print_max_valid_values:--1}
+# The maximum number of characters for items to print in an error message
+# for an argument that defines a set of valid values.
+sa_print_max_valid_values_length=${sa_print_max_valid_values_length:--1}
+# The maximum number of tokens that sa_parse will handle. This value is provided
+# to provide rudimentary detection for infinite recursion when using expand tokens.
+# For example, @expand=foo --> @expand=bar and @expand=bar --> @expand=foo would
+# otherwise cause the parsing never to terminate.
+sa_max_tokens=${sa_max_tokens:-2000}
+
+sa_expand_token_help=( "-h/--help" "@doc=Print usage instructions and exit." "@afterprocessing=sa_display_usage; exit 0" )
+sa_expand_token_version=( "--version" "@doc=Display version information." "@afterprocessing=sa_display_version; exit 0" )
+#sa_expand_token_log_level=( "--log-level" "OFF,ERROR,WARN,INFO,CONFIG,FINE,FINER,FINEST,ALL" "@default=INFO" "@after" )
+
+# Disable tty logging (used by auto completion functions)
+_sa_tty_echo() { :; }
+
+sa_end_parse() {
+    sa_parse_status="$1"
+    [ "${sa_parse_status}" -eq "${sa_parse_status}" ] ||
+        { echo "Usage: ${FUNCNAME} <sa_parse exit status>" >&2; exit 1; }
+
+    if [ "${sa_parse_status}" -eq 0 ]
+    then
+        log FINE "${FUNCNAME}: parsing successful"
+    else
+        log FINE "Failed to parse argument definitions (${FUNCNAME} exit status: ${sa_parse_status})"
+        case "${sa_parse_status}" in
+            127)
+                log ERROR "Check that your argument definitions have the necessary backslashes and no trailing whitespace"
+                ;;
+        esac
+
+        if ${sa_exit_on_parse_failure}
+        then
+            log FINE "Parse failure: exiting"
+            exit "${sa_parse_status}"
+        else
+            log FINE "sa_exit_on_parse_failure=false, not exiting on parse failure"
+        fi
+    fi
+
+    if ${sa_parse_only}
+    then
+        log INFO "sa_parse_only='true': exiting after parsing argument definitions"
+        exit "${sa_parse_status}"
+    fi
+    return "${sa_parse_status}"
+}
+
+sa_end_process() {
+    sa_process_status="$1"
+    [ "${sa_process_status}" -eq "${sa_process_status}" ] ||
+        { echo "Usage: ${FUNCNAME} <sa_process exit code>" >&2; exit 1; }
+
+    if [ "${sa_process_status}" -eq 0 ]
+    then
+        log FINE "${FUNCNAME}: (argument) processing successful"
+    else
+        log FINE "Failed to process arguments (${FUNCNAME} exit status: ${sa_process_status})"
+        case "${sa_process_failure_action}" in
+            none)
+                :
+                ;;
+            display-usage)
+                sa_display_usage >&2
+                ;;
+            display-synopsis)
+                echo "${sa_synopsis_text}" >&2
+                ;;
+        esac
+
+        if ${sa_exit_on_process_failure}
+        then
+            log FINE "Process failure: exiting"
+            exit "${sa_process_status}"
+        else
+            log FINE "sa_exit_on_process_failure=false, not exiting on process failure"
+        fi
+    fi
+    return "${sa_process_status}"
+}
+
+sa_parse() {
+    sa_tic_time $FUNCNAME
+    log CONFIG "${sa_version_string}"
+    # Set script path (used for comparing script's timestamp to the cache file)
+    sa_script_path="$1"
+    log CONFIG "Script path: '${sa_script_path}'"
+
+    # Set script basename (used e.g. for deducing cache file name)
+    sa_script_name="$(basename $1)"
+    log CONFIG "Script name: '${sa_script_name}'"
+    shift # Don't try to parse script name as an option
+
+    # Try to read from cache (if enabled). Certain error return codes from
+    # sa_read_from_cache don't signal an actual error but merely that the
+    # options need to be parsed (and afterwards are possibly written to cache).
+    if [ "${sa_parse_only}" = "true" ]
+    then
+        log CONFIG "sa_parse_only=${sa_parse_only}: not using cache"
+    elif [ "${sa_use_cache}" = "true" ]
+    then
+        sa_read_from_cache "${sa_script_name}"
+        local read_cache_retcode=$?
+        case "${read_cache_retcode}" in
+            0)
+              # These are corner cases but check completion and man page mechanisms even if cache is read successfully.
+              [ "$sa_use_completion" = true ] && { sa_use_completion "$sa_script_name" || return; }
+              [ "$sa_generate_man_page" = true ] && { sa_generate_man_page "$sa_script_name" "${sa_script_path}" || return; }
+              log CONFIG "Read options from cache, returning..."
+              sa_toc_time ${FUNCNAME}; [ "${sa_benchmark}" = "true" ] && sa_print_toc_time ${FUNCNAME}
+              return 0
+              ;;
+            10|11|12)
+              log CONFIG "Could not read options from cache: parsing them..."
+              ;;
+            *)
+              log ERROR "Unexpected error code (${read_cache_retcode}) while trying to read from cache"
+              sa_toc_time ${FUNCNAME}; [ "${sa_benchmark}" = "true" ] && sa_print_toc_time ${FUNCNAME}
+              return "${SA_PARSE_CANNOT_READ_CACHE}"
+        esac
+    else
+        log CONFIG "Cache disabled (sa_use_cache='${sa_use_cache}')"
+    fi
+
+    # Array storing the option fullnames (and their order).
+    declare -ag sa_options=() # e.g. ("-b/baudrate" "-h" "--port" ...)
+
+    # Array storing option flag definitions (separating short and long form
+    # for any given option) for detecting duplicate flag definitions.
+    declare -ag sa_flags=() # e.g. ("-b" "--baudrate" "-h" "--port" ...)
+
+    # Array storing the mapnames (and their order).
+    declare -ag sa_optionmaps=() # e.g. ("sa_option_b__baudrate" "sa_option_h" ...)
+
+    # Map from flags to options' fullnames
+    # [-b]="-b/--baudrate"
+    # [--baudrate]="-b/--baudrate"
+    # [-h]="-h"
+    # [--port]="--port
+    declare -Ag sa_fullnames=()
+
+    # Map from flags and fullnames to option map names
+    # [-b]="sa_option_b__baudrate"
+    # [--baudrate]="sa_option_b__baudrate"
+    # [-b/--baudrate]="sa_option_b__baudrate"
+    # [-h]="sa_option_h"
+    declare -Ag sa_mapnames=()
+
+    # Array storing the (raw) positional parameter definitions (and their order).
+    declare -ag sa_params=() # e.g. ("<input file>" "<output file>" "[<log file>]")
+
+    # Running number that is used in parameter identifiers to ensure their uniqueness.
+    declare -g sa_param_counter=0
+
+    # Array storing the mapnames (and their order).
+    declare -ag sa_parammaps=() # e.g. ("sa_param_input_file" "sa_param_output_file" ...)
+
+    # Array storing all variable names (from both options and parameters).
+    declare -ag sa_varnames=() # e.g. ("b", "baudrate", "port", ... , "input_file")
+
+    # Running index (per entry) for validation commands
+    declare sa_validation_command_index
+    declare -Ag sa_validation_command_modifiers=()
+
+    # Arrays storing short and long option strings (for getopt)
+    declare -ag sa_shortopt_strings=() # e.g. ("b:", "h", "d::", "g", ...)
+    declare -ag sa_longopt_strings=() # e.g. ("baudrate:", "help", "delta::", "group-on", ...)
+
+    # Set default "library tokens" to be parsed alongside with sa_parse arguments
+    local sa_default_tokens_status
+    sa_default_tokens_status=$(declare -p sa_default_tokens 2>/dev/null)
+    if [ $? -eq 0 ]
+    then
+        if [ "${sa_default_tokens_status}" = "declare -a sa_default_tokens=()" ]
+        then
+            log FINE "Variable 'sa_default_tokens' set to an empty array"
+        elif [[ "${sa_default_tokens_status}" = 'declare -- sa_default_tokens="'*'"' ]]
+        then
+            log ERROR "Variable 'sa_default_tokens' set to string: '${sa_default_tokens}'"
+            log ERROR "Override by setting to an array value e.g. sa_default_tokens=()"
+            return "${SA_PARSE_INVALID_ARGUMENTS}"
+        else
+            log FINE "Variable 'sa_default_tokens' set to a custom array"
+        fi
+    else
+        log FINE "sa_default_tokens not defined: using the default 'default tokens'"
+        declare -a sa_default_tokens=( @expand=help )
+    fi
+    log_vars FINE sa_default_tokens_status sa_default_tokens
+
+    # Argument definition parsing state machine
+    declare -Ag parsing_state=()
+    # Option transition restrictions
+    parsing_state+=( [accept_option]=true )
+    parsing_state+=( [accept_argplaceholder]=false )
+    parsing_state+=( [accept_validationargument]=false )
+    parsing_state+=( [accept_directive]=false )
+    parsing_state+=( [accept_validation]=false )
+    parsing_state+=( [accept_endofoptions]=true )
+    # Parameter transition restrictions
+    parsing_state+=( [accept_param]=true )
+    parsing_state+=( [accept_optionalparam]=true )
+    parsing_state+=( [accept_varparam]=true )
+    parsing_state+=( [accept_varoptionalparam]=true )
+    # Recording state (ready to trigger finalizing of an option or a parameter)
+    parsing_state+=( [recording_option]=false )
+    parsing_state+=( [recording_param]=false )
+
+    local arg token token_type token_number=0
+    local previous_token previous_token_type
+    declare -a token_queue=()
+    log CONFIG "---------- Parsing options and parameters ----------"
+    for arg in "${sa_default_tokens[@]}" "$@"
+    do
+        token_queue+=( "${arg}" )
+        while [ ${#token_queue[@]} -gt 0 ]
+        do
+            if [ "${token_number}" -ge "${sa_max_tokens}" ]
+            then
+                log ERROR "Maximum number of tokens reached: ${sa_max_tokens}"
+                log ERROR "This may be caused by recursively (infinitely) expanding expand tokens:"
+                log ERROR "  e.g. For example, @foo@ --> @bar@ and @bar@ --> @foo@"
+                log ERROR "If more tokens are actually required use e.g. 'sa_max_tokens=1500'"
+                return "${SA_PARSE_INVALID_ARGUMENTS}"
+            fi
+            token="${token_queue[0]}"; unset token_queue[0]; token_queue=( "${token_queue[@]}" )
+            token_type="unknown"
+            log FINE "Handling token ${token_number}: '${token}'"
+            ((token_number++))
+            # Deduce token type
+            # NOTE! The order of conditions is significant: start with the most specific one.
+            if [ "${token}" = "--" ]; then
+                # --
+                token_type=endofoptions
+            elif [[ "${token}" = -* ]] && [[ "${token}" != ---* ]]; then
+                # -p/--port
+                token_type=option
+            elif [[ "${token}" = "<"*"...>" ]] ||
+                     [[ "${token}" = "[<"*"...>]" ]] ||
+                     [[ "${token}" = "[<"*">...]" ]] ||
+                     [[ "${token}" = "<["*"]>" ]] ||
+                     [[ "${token}" = "<["*"...]>" ]] ||
+                     [[ "${token}" = "<["*"]...>" ]]; then
+                # Give a helpful error message in case of invalid
+                # (mistyped or misremembered) parameter syntax
+                #   <input file...>
+                #   [<input file...>]
+                #   [<input file>...]
+                #   <[input file>]
+                #   [<input file...>]
+                #   [<input file>...]
+                log ERROR "Invalid syntax: \"${token}\", valid parameter definitions:"
+                log ERROR "           normal: \"<param>\""
+                log ERROR "         optional: \"[<param>]\""
+                log ERROR "          varargs: \"<param>...\""
+                log ERROR " varargs optional: \"[<param>]...\""
+                return "${SA_PARSE_INVALID_ARGUMENTS}"
+            elif [[ "${token}" = "<"*">" ]]; then
+                # <input file>
+                token_type=param
+            elif [[ "${token}" = "[<"*">]" ]]; then
+                # [<log file>]
+                token_type=optionalparam
+            elif [[ "${token}" = "<"*">..." ]]; then
+                # <input file>...
+                token_type=varparam
+            elif [[ "${token}" = "[<"*">]..." ]]; then
+                # [<input file>]...
+                token_type=varoptionalparam
+            elif [[ "${token}" =~ ^@expand=[A-Za-z_]+$ ]]; then
+                local expand_token_name=${token:8}
+                local expanded_tokens_varname="sa_expand_token_${expand_token_name}"
+                declare -n expanded_tokens="${expanded_tokens_varname}"
+                # Should never happen since expand_token_name is always a valid identifier
+                #if [ $? -ne 0 ]
+                #then
+                #    log ERROR "Invalid expand token name: '${expand_token_name}'"
+                #    log ERROR "Expand token should match '^@[a-z_]+@$'"
+                #    return "${SA_PARSE_INVALID_ARGUMENTS}"
+                #fi
+                if [ ${#expanded_tokens[@]} -eq 0 ]
+                then
+                    log ERROR "No such expand token (or an empty array): '${expand_token_name}'"
+                    log ERROR "Use e.g. '${expanded_tokens_varname}=( value1 value2 )' to define it."
+                    return "${SA_PARSE_INVALID_ARGUMENTS}"
+                fi
+
+                token_queue=( "${expanded_tokens[@]}" "${token_queue[@]}" )
+                log FINER "Expanded ${#expanded_tokens[@]} tokens from expand token: '${token}'"
+                continue
+            elif [[ "${token}" = @@@skiprest ]]; then
+                # @@@@
+                log FINER "Skipping rest of the tokens: '${token}' (starts with '@@@@')"
+                break 2
+            elif [[ "${token}" = @@@* ]]; then
+                # @@@
+                log FINER "Skipping dummy token '${token}' (starts with '@@@')"
+                continue
+            elif [[ "${token}" = @@* ]]; then
+                # @@glob
+                token_type=validation
+            elif [[ "${token}" = @* ]]; then
+                # @doc
+                token_type=directive
+            else
+                if ${parsing_state[accept_argplaceholder]}
+                then
+                    # Type:          Example value:         Shortcut for:
+                    # -----------------------------------------------------------
+                    # Valid values:  low,medium,high        @validvalues%=low%medium%high
+                    # Variable name: port                   @varname=port
+                    # Glob:          '*.jpg'                @glob='*.jpg'
+                    token_type=argplaceholder
+                elif ${parsing_state[accept_validationargument]}
+                then
+                    token_type=validationargument
+                else
+                    log ERROR "Invalid token '${token}' (${token_type})${previous_token_type:+ after token '${previous_token}' (${previous_token_type})}"
+                    return "${SA_PARSE_INVALID_ARGUMENTS}"
+                fi
+            fi
+
+            # Enforce state transition rules
+            log_vars_in_map FINEST parsing_state
+            if ${parsing_state["accept_${token_type}"]}
+            then
+                log FINER "Reading token '${token}' (${token_type})"
+            else
+                log ERROR "Invalid token '${token}' (${token_type})${previous_token_type:+ after token of type '${previous_token_type}'}"
+                return "${SA_PARSE_INVALID_ARGUMENTS}"
+            fi
+            plus_indent
+
+            # Finalize (store) validation command
+            if ${parsing_state[accept_validationargument]} && [ "${token_type}" != validationargument ]
+            then
+                log FINER "Triggerin finalizing of a validation command"
+                sa_finalize_validation_command
+                parsing_state[accept_validationargument]=false
+            fi
+
+            # Finalize (store) options and parameters
+            if ${parsing_state[recording_option]} && [ "${token_type}" != argplaceholder ] &&
+                    [ "${token_type}" != directive ] &&
+                    [ "${token_type}" != validation ] &&
+                    [ "${token_type}" != validationargument ]
+            then
+                log FINER "Triggering finalizing of an option"
+                sa_finalize_option
+                parsing_state[recording_option]=false
+                parsing_state[accept_directive]=false
+                parsing_state[accept_validation]=false
+            fi
+            if ${parsing_state[recording_param]} && [ "${token_type}" != directive ] &&
+                    [ "${token_type}" != validation ] &&
+                    [ "${token_type}" != validationargument ]
+            then
+                log FINER "Triggering finalizing of a parameter"
+                sa_finalize_param
+                parsing_state[recording_param]=false
+                parsing_state[accept_directive]=false
+                parsing_state[accept_validation]=false
+            fi
+
+            # Validation command argument can only follow a validation
+            # directive (or another validation command argument)
+            if [ "${token_type}" = validation ]
+            then
+                log FINER "Token type is 'validation': next token can be a validation argument"
+                parsing_state[accept_validationargument]=true
+            fi
+
+            # Arg(ument) placeholder token types can only follow an option
+            if [ "${token_type}" = option ]
+            then
+                log FINER "Token type is 'option': next token can be an argument placeholder"
+                parsing_state[recording_option]=true
+                parsing_state[accept_argplaceholder]=true
+                parsing_state[accept_directive]=true
+                parsing_state[accept_validation]=true
+            else
+                log FINER "Token type is not 'option': next token cannot be an argument placeholder"
+                parsing_state[accept_argplaceholder]=false
+            fi
+
+            if [[ "${token_type}" =~ .*param|endofoptions ]]
+            then
+                log FINER "Token type (${token_type}) is '*param' or 'endofoptions': not accepting options anymore"
+                parsing_state[accept_option]=false
+                parsing_state[accept_endofoptions]=false
+            fi
+
+            if [[ "${token_type}" = *param ]]
+            then
+                log FINER "Token type is ${token_type}: recording parameter..."
+                parsing_state[recording_param]=true
+                parsing_state[accept_directive]=true
+                parsing_state[accept_validation]=true
+            fi
+
+            case "${token_type}" in
+                optionalparam)
+                    log FINER "Token type is ${token_type}: not accepting subsequent mandatory parameters"
+                    parsing_state[accept_param]=false
+                    parsing_state[accept_varparam]=false
+                    ;;
+                varparam|varoptionalparam)
+                    log FINER "Token type is ${token_type}: not accepting subsequent parameters"
+                    parsing_state[accept_param]=false
+                    parsing_state[accept_optionalparam]=false
+                    parsing_state[accept_varparam]=false
+                    parsing_state[accept_varoptionalparam]=false
+                    ;;
+            esac
+
+            # Parse token contents and update the current entry (option or parameter) accordingly
+            log FINER "Parsing token '${token}' (${token_type})"
+            sa_parse_${token_type} "${token}" || return
+            previous_token_type="${token_type}"
+            previous_token="${token}"
+            minus_indent
+        done # while [ ${#token_queue[@]} -gt 0 ]
+    done # for arg in "${sa_default_tokens[@]}" "$@"
+
+    # Finalize (store) validations, options and parameters, and finalize parsing
+    ${parsing_state[accept_validationargument]} && { sa_finalize_validation_command || return; }
+    ${parsing_state[recording_option]} && { sa_finalize_option || return; }
+    ${parsing_state[recording_param]} && { sa_finalize_param || return; }
+    sa_finalize_parsing || return
+    log CONFIG "Parsing options finished successfully"
+
+    # Write cache, command completion and man page files (if enabled)
+    [ "$sa_use_cache" = true ] && { sa_write_to_cache "$sa_script_name" || return; }
+    [ "$sa_use_completion" = true ] && { sa_use_completion "$sa_script_name" || return; }
+    [ "$sa_generate_man_page" = true ] && { sa_generate_man_page "$sa_script_name" "${sa_script_path}" || return; }
+
+    sa_toc_time ${FUNCNAME}; [ "${sa_benchmark}" = "true" ] && sa_print_toc_time ${FUNCNAME}
+    return 0
+}
+
+# Adds a marked directory the existence of which is checked when sourcing simpleargs.rc
+# (see especially function sa-refresh-completion). If there's a marker directory 'xyz'
+# is found the script 'xyz' will be configured to use simpleargs completion routines.
+sa_use_completion() {
+    local script_name="$1"
+    log FINE "Checking '${script_name}' for addition to completed scripts: '${sa_completed_scripts_dir}'"
+    if [ -d "${sa_completed_scripts_dir}/${script_name}" ]
+    then
+        log FINE "Script already included in completed scripts"
+    else
+        log FINE "Adding '${script_name}' to completed scripts"
+        mkdir -p "${sa_completed_scripts_dir}/${script_name}" || return
+    fi
+}
+
+sa_finalize_validation_command() {
+    sa_add_validation "${sa_validation_command_words[@]}"
+    unset sa_validation_command_words
+}
+
+# Creates the final map that holds the data for this option and copies the attributes
+# from map 'option' the final map (e.g. 'sa_option_b__baudrate').
+sa_finalize_option() {
+    log FINER "Finalizing an option: '${clientry[fullname]}'"
+    plus_indent
+
+    if [ -n "${clientry[implicit_varname]}" ] && [ -n "${clientry[explicit_varname]}" ]
+    then
+        log ERROR "${clientry[fullname]}: cannot have both implicit (${clientry[implicit_varname]}) and explicit variable name (${clientry[explicit_varname]})"
+        return "${SA_PARSE_INVALID_ARGUMENTS}"
+    fi
+    [ -n "${clientry[implicit_varname]}" ] && clientry[varname]="${clientry[implicit_varname]}"
+    [ -n "${clientry[explicit_varname]}" ] && clientry[varname]="${clientry[explicit_varname]}"
+
+    # Finalize option type
+    # - If there is some kind of validation logic or a default value -> change to 'value' type
+    # - @optionalvalue set --> optionalvalue
+    # - @multivalue --> multivalue (remember to set list separator if necessary)
+    if [ -n "${clientry[validationarraynames]}" ] ||
+           [ -n "${clientry[validvaluesarray]}" ] ||
+           [ -n "${clientry[validvaluesfile]}" ] ||
+           [ -n "${clientry[validvaluescommand]}" ] ||
+           [ -n "${clientry[default]}" ]
+    then
+        clientry[type]=value
+        clientry[getopt_type]=":"
+    fi
+    [ -n "${clientry[optionalvalue]}" ] && { clientry[type]=optionalvalue; clientry[getopt_type]="::"; }
+    [ -n "${clientry[multivalue]}" ] && { clientry[type]=multivalue; clientry[getopt_type]=":"; }
+    [ "${clientry[type]}" = novalue ] && clientry[default]=false # Set implicit default
+    minus_indent
+
+    if [ "${clientry[allowrepeat]}" = true ] && [ "${clientry[type]}" != novalue ]
+    then
+        log ERROR "${clientry[fullname]}: @allowrepeat directive can only be used with novalue options"
+        return "${SA_PARSE_INVALID_ARGUMENTS}"
+    fi
+
+    plus_indent
+    # Deduce to which variable names to assign values
+    if [ -n "${clientry[varname]}" ]
+    then
+        # Variable name specified -> this is the only variable assigned
+        clientry[flagvars]="${clientry[varname]}"
+
+        declare -n sa_varname_test_variable="${clientry[varname]}" 2>/dev/null || {
+            log ERROR "Invalid variable name '${clientry[varname]}'"
+            log ERROR "Variable names should match regexp [a-zA-Z0-9_][a-zA-Z0-9_]*"
+            return "${SA_PARSE_INVALID_ARGUMENTS}"
+        }
+    else
+        # Use variable names formed from flag names
+        # "-s -p --ssh-port" -> "s p ssh_port" (strip leading dashes and convert the rest of the dashes into underscores)
+        clientry[flagvars]="$(sed -r -e "s/(^| )--?/\1${sa_varname_prefix}/g" -e 's/-/_/g' <<< "${clientry[flags]}")"
+    fi
+
+    # If the option variable name is derived from the flag name it might be
+    # invalid: flags '-2' and '--2nd' produce invalid variable names because
+    # of the leading number.
+    local varname
+    for varname in ${clientry[flagvars]}
+    do
+        declare -n sa_varname_test_variable="${varname}" 2>/dev/null || {
+            log ERROR "Invalid variable name '${varname}'"
+            log ERROR "Variable names should match regexp [a-zA-Z0-9_][a-zA-Z0-9_]*"
+            log ERROR "Consider using '@varname=myvar' to explicitly set the variable name."
+            return "${SA_PARSE_INVALID_ARGUMENTS}"
+        }
+    done
+
+    local repeat_count_variables=""
+    if [ "${clientry[allowrepeat]}" = true ]
+    then
+        log FINEST "Adding repeat count variables for ${clientry[fullname]}"
+        for varname in ${clientry[flagvars]}
+        do
+            repeat_count_variables="${varname}_count "
+        done
+    fi
+
+    log FINEST "Checking for conflicting variable names (flagvars: '${clientry[flagvars]}')"
+    for varname in ${clientry[flagvars]} ${repeat_count_variables}
+    do
+        log FINEST "Checking variable name: '${varname}'"
+        if sa_array_contains sa_varnames "${varname}"
+        then
+            log ERROR "Variable name for ${clientry[fullname]} already in use: '${varname}'"
+            return "${SA_PARSE_INVALID_ARGUMENTS}"
+        else
+            sa_varnames+=("${varname}")
+        fi
+    done
+    minus_indent
+
+    # Append getopt option strings
+    local flag
+    for flag in ${clientry[flags]}
+    do
+        if [[ "${flag}" = --* ]]
+        then
+            sa_longopt_strings+=( "${flag:2}${clientry[getopt_type]}" )
+        elif [[ "${flag}" = -* ]]
+        then
+            sa_shortopt_strings+=( "${flag:1}${clientry[getopt_type]}" )
+#        else
+#            # Should never reach this block ('sa_record_option_definition' already checks the flags)
+#            log ERROR "Unexpected flag definition: '${flag}'"
+#            return "${SA_PARSE_INVALID_ARGUMENTS}"
+        fi
+    done
+
+    # "Persist" option attributes
+    sa_map_copy clientry ${clientry[mapname]}
+    sa_array_copy docs ${clientry[docarray]}
+    unset clientry
+}
+
+sa_finalize_param() {
+    log FINER "Finalizing a parameter: '${clientry[fullname]}'"
+    plus_indent
+
+    declare -n sa_varname_test_variable="${clientry[varname]}" 2>/dev/null || {
+        log ERROR "Invalid variable name '${clientry[varname]}'"
+        log ERROR "Variable names should match regexp [a-zA-Z0-9_][a-zA-Z0-9_]*"
+        log ERROR "Consider using '@varname=myvar' to explicitly set the variable name."
+        return "${SA_PARSE_INVALID_ARGUMENTS}"
+    }
+
+    if sa_array_contains sa_varnames "${clientry[varname]}"
+    then
+        log ERROR "Variable name for parameter '${clientry[fullname]}' already in use: '${clientry[varname]}'"
+        return "${SA_PARSE_INVALID_ARGUMENTS}"
+    else
+        sa_varnames+=("${clientry[varname]}")
+    fi
+
+    clientry[mapname]=sa_param_${clientry[varname]}
+    sa_parammaps+=(${clientry[mapname]})
+    sa_map_copy clientry ${clientry[mapname]}
+    sa_array_copy docs ${clientry[docarray]}
+
+    minus_indent
+    # Clear the data model: this enables sa_state_change to deduce whether a parameter needs to be saved.
+    unset clientry
+}
+
+sa_init_clientry() {
+    log FINEST "Initializing a new CLI entry"
+    unset clientry validation
+    sa_validation_command_index=0
+
+    # A map of CLI entry attributes
+    declare -Ag clientry=()
+    # An array of validation rules (regexp, function)
+    declare -ag validation=()
+    # An array of documentation paragraphs (specified using @doc directive)
+    declare -ag docs=()
+}
+
+sa_finalize_parsing() {
+    log FINER "Finalizing parsing"
+    # See http://stackoverflow.com/questions/1527049/join-elements-of-an-array
+    # For some reason this does NOT work using '@' as the "array index"
+    sa_getopt_short_options=$(IFS=,; echo "${sa_shortopt_strings[*]}")
+    sa_getopt_short_options="${sa_getopt_short_options//,}" # Remove commas
+    sa_getopt_long_options=$(IFS=,; echo "${sa_longopt_strings[*]}")
+    log_vars FINER "# getopt strings" sa_getopt_short_options sa_getopt_long_options
+
+    # Precompute the "completable" flags and save in cache. For long flags that take
+    # an optional value one must one must include e.g. '--sort' but also '--sort='.
+    log FINEST "Generating \"completable\" flags for Bash completion"
+    local optionmap_name flag
+    sa_completable_flags=""
+    for optionmap_name in ${sa_optionmaps[@]}
+    do
+        declare -n option="${optionmap_name}"
+        for flag in ${option[flags]}
+        do
+            if [ "${option[type]}" = "optionalvalue" ] && [[ "${flag}" = --* ]]
+            then
+                sa_completable_flags="${sa_completable_flags} ${flag} ${flag}="
+            else
+                sa_completable_flags="${sa_completable_flags} ${flag}"
+            fi
+        done
+    done
+    sa_completable_flags="${sa_completable_flags:1}" # Strip leading space
+    log_vars FINER "# Variables for Bash completion" sa_completable_flags
+
+    sa_build_usage_instructions
+}

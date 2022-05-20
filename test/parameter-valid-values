@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+sa_default_tokens=()
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" \
+             -h/--help \
+             -- \
+             "<command>" @validvalues=copy,delete,create
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_valid_1() {
+    # -h copy
+    value 0 source_result parse_result process_result
+    value true h help
+    value copy command
+}
+
+test_valid_2() {
+    # delete
+    value 0 source_result parse_result process_result
+    value false h help
+    value delete command
+}
+
+test_invalid() {
+    # remove
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}

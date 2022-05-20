@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" \
+             -p \
+             -v \
+             -x \
+             -u user \
+             -g group
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_off() {
+    #
+    value 0 source_result parse_result process_result
+    value false p v x
+    empty user group
+    [ $# -eq 0 ]
+}
+
+test_separate() {
+    # -p -v -u jack
+    value 0 source_result parse_result process_result
+    value true p v
+    value false x
+    value jack user
+    [ $# -eq 0 ]
+}
+
+test_combined_novalue_options() {
+    # -pv
+    value 0 source_result parse_result process_result
+    value true p v
+    value false x
+    empty user group
+    [ $# -eq 0 ]
+}
+
+test_combined_mixed() {
+    # -pxu jeff
+    value 0 source_result parse_result process_result
+    value true p x
+    value false v
+    value jeff user
+    empty group
+    [ $# -eq 0 ]
+}
+
+test_combined_mixed_no_space() {
+    # -upax
+    value 0 source_result parse_result process_result
+    value false p v x
+    value pax user
+    empty group
+    [ $# -eq 0 ]
+}
+
+test_combined_mixed_in_the_middle() {
+    # -vupaxsmith
+    value 0 source_result parse_result process_result
+    value false p x
+    value true v
+    value paxsmith user
+    empty group
+    [ $# -eq 0 ]
+}

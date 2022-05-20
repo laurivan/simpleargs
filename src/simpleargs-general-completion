@@ -1,0 +1,997 @@
+#!/usr/bin/env bash
+
+_sa_record_coverage() {
+    local marker=$(printf %04d "$1")
+    echo "" >> "${SA_COMPLETION_COVERAGE_DIR}/${marker}"
+}
+
+_simpleargs_general_completion() {
+    #SA_COV
+    __sa_start=$(date +%s%3N)
+    local ind="    "
+
+    # "Disable" logging functions present in validation functions
+    log() { :; }
+    log_vars() { :; }
+    plus_indent() { :; }
+    minus_indent() { :; }
+
+    sa_tic_time completion
+    sa_tic_time completion_state
+    sa_stopwatch_reset validation
+
+    local i map_name
+    local script="$(basename "${COMP_WORDS[0]}")"
+    if [ "${_sa_last_completed_script}" != "${script}" ]
+    then
+        #SA_COV
+        _sa_tty_echo ERROR $'\n\n\n\n\n\n\n\n\n\n'
+        _sa_last_completed_script="${script}"
+    fi
+    _sa_tty_echo WARN $'\n\n'"--------------------------------------------------------------------------------"
+    _sa_tty_echo CONFIG "$(compopt)"
+    _sa_tty_echo WARN "${FUNCNAME}: ${script}, ${COMP_CWORD}/$((${#COMP_WORDS[@]}-1)), ${COMP_POINT} (type: ${COMP_TYPE})"
+    _sa_tty_echo WARN "$(_simpleargs_print_ruler "${COMP_POINT}")"
+    _sa_tty_echo WARN "${COMP_LINE}"
+    _sa_tty_echo WARN "${COMP_WORDS[@]}"
+
+    if [ "${_sa_completion_display_all_tokens}" = "true" ]
+    then
+        #SA_COV
+        for i in ${!COMP_WORDS[@]}
+        do
+            #SA_COV
+            [ "${i}" -eq "${COMP_CWORD}" ] && _sa_tty_echo INFO -n "  "
+            _sa_tty_echo INFO "$(printf "%2d" "${i}"): ${COMP_WORDS[${i}]}"
+        done
+    fi
+
+    COMPREPLY=()
+    if [ -d "${HOME}" ]
+    then
+        #SA_COV
+        _sa_tty_echo CONFIG "Using HOME='${HOME}'"
+    else
+        #SA_COV
+        local HOME_not_configured_msg="\$HOME ('${HOME}') not set or not a directory: auto complete disabled"
+        _sa_tty_echo ERROR "${HOME_not_configured_msg}"
+        echo
+        echo "${HOME_not_configured_msg}"
+        return
+    fi
+    #SA_COV
+
+    local cache_file="${HOME}/.simpleargs.d/cached/${script}"
+    if [ -r "${cache_file}" ]
+    then
+        #SA_COV
+        # Try to keep the command completion up-to-date when developing or debugging a script.
+        if [ "${SA_EAGER_CACHE_REFRESH}" = "true" ]
+        then
+            #SA_COV
+            _sa_tty_echo INFO "Checking if cache file needs to be refreshed"
+            local script_path="$(which "${script}" 2>/dev/null)"
+            if [ -x "${script_path}" ]
+            then
+                #SA_COV
+                _sa_tty_echo INFO "${ind}     script: '${script}'"
+                _sa_tty_echo INFO "${ind}script_path: '${script_path}'"
+                if [ "${script_path}" -nt "${cache_file}" ]
+                then
+                    #SA_COV
+                    _sa_tty_echo INFO -n "${ind}Refreshing cache file by running ${script}..."
+                    if sa_parse_only=true ${script} >/dev/null 2>/dev/null
+                    then
+                        #SA_COV
+                        _sa_tty_echo INFO "OK"
+                    else
+                        #SA_COV
+                        _sa_tty_echo INFO "ERROR"
+                        _sa_tty_echo ERROR "$(sa_parse_only=true ${script})"
+                        echo "Failed to run 'sa_parse_only=true ${script}' to refresh cache" >&2
+                    fi
+                else
+                    #SA_COV
+                    _sa_tty_echo INFO "Cache file up to date"
+                fi
+            else
+                #SA_COV
+                _sa_tty_echo INFO "Script not executable: '${script_path}'"
+                echo "Cannot run 'sa_parse_only=true ${script} (path: '${script_path}') to refresh cache (not executable)" >&2
+            fi
+        fi
+
+        #SA_COV
+        _sa_tty_echo INFO "Sourcing cache file: '${cache_file}'"
+        . "${cache_file}" || { echo "Problem sourcing cache file: ${cache_file}"; return 1; }
+    else
+        #SA_COV
+        _sa_tty_echo ERROR "No such cache file (or not readable): '${cache_file}'"
+        _sa_tty_echo ERROR "Using Bash default completion as fallback (and removing completion function if exists)"
+        compopt -o default
+        complete -r "${script}"
+
+        local completed_scripts_parent_dir="${HOME}/.simpleargs.d/completed-scripts"
+        local completed_script_marker_dir="${completed_scripts_parent_dir}/${script}"
+        if [ -d "${completed_scripts_parent_dir}" ] && [ -d "${completed_script_marker_dir}" ]
+        then
+            #SA_COV
+            _sa_tty_echo INFO "Removing '${script}' from completed scripts: '${completed_scripts_parent_dir}'"
+            rmdir "${completed_script_marker_dir}" ||
+                _sa_tty_echo ERROR "Unable to delete completed script marker dir: '${completed_script_marker_dir}'"
+        else
+            #SA_COV
+            _sa_tty_echo WARN "Completed scripts parent dir or marker dir not found: '${completed_script_marker_dir}'"
+        fi
+
+        return 1
+    fi
+
+    #SA_COV
+    # Optimize auto completion speed by skipping redundant validations and fancy error messages.
+    : ${_sa_short_circuit_validation:=true}
+    : ${_sa_dummy_validation_error_messages:=true}
+
+    # Implement the auto completion by examining all the arguments using a state machine:
+    local expecting=option/param
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    local expected_pos_parameter=0
+    local current_flag=""
+    local list_separator=""
+
+    sa_truncated_words=(${COMP_LINE:0:$COMP_POINT})
+    sa_truncated_cur="${sa_truncated_words[-1]}"
+
+    _sa_tty_echo CONFIG ""
+    _sa_tty_echo CONFIG "Truncation:"
+    { echo -n "${ind}"; declare -p sa_truncated_words; } | _sa_tty_echo CONFIG
+    _sa_tty_echo CONFIG "${ind}          cur: '${cur}'"
+    _sa_tty_echo CONFIG "${ind}truncated cur: '${sa_truncated_cur}'"
+
+    # The word is not empty AND the word is the prefix of ${cur} AND the word does not contain spaces
+    if [ "${sa_truncated_cur}" != "${cur}" ] &&
+           [ -n "${sa_truncated_cur}" ] &&
+           [[ "${cur}" =~ "${sa_truncated_cur}"* ]] &&
+           ! [[ "${cur}" =~ .*" ".* ]]
+    then
+        #SA_COV
+        _sa_tty_echo CONFIG "${ind}Replacing cur: '${sa_truncated_cur}'"
+        _sa_tty_echo CONFIG "${ind}         (was: '${cur}')"
+        cur="${sa_truncated_cur}"
+    fi
+
+    _sa_tty_echo INFO $'\n'"Iterating over tokens:"
+    for i in ${!COMP_WORDS[@]}
+    do
+        #SA_COV
+        local token="${COMP_WORDS[${i}]}"
+        _sa_tty_echo INFO "$(printf "%-70s (%d)" "'${token}'" "${i}")"
+        if [ "${i}" -eq 0 ]
+        then
+            #SA_COV
+            # First item: print out the script name
+            _sa_tty_echo INFO "${ind}script invocation: '${COMP_WORDS[${i}]}'"
+        elif [ "${i}" -eq "${COMP_CWORD}" ]
+        then
+            #SA_COV
+            # Last item: break out of the loop to provide the auto
+            # completion options based on the current token.
+            #_sa_tty_echo INFO "${ind}stopping at current token: '${token}'"
+            _sa_tty_echo INFO "${ind}stopping at current token: '${cur}'"
+            _sa_tty_echo INFO "${ind}expecting: ${expecting}"
+            break
+        elif [ "${expecting}" = "param" ]
+        then
+            #SA_COV
+            # Flags are over (after encountering '--') --> the token
+            # can be no other than a (positional) parameter.
+            _sa_tty_echo INFO "${ind}param(${expected_pos_parameter}), flags over, consuming: '${token}'"
+            (( expected_pos_parameter++ ))
+            expecting="param"
+        elif [[ "${expecting}" = *separator* ]] && [ "${token}" = "${list_separator}" ]
+        then
+            #SA_COV
+            # If we're expecting a list separator and the next token is one there's no
+            # other option than assume it is a list separator. Note that the following
+            # cases are indistinguishable from each other:
+            # > my --list dog:cat:   # Expecting the next animal
+            # > my --list dog:cat :  # Two animals and the first pos param ':' given
+            _sa_tty_echo INFO "${ind}separator (list), consuming"
+            expecting="value"
+        elif [[ "${expecting}" = *equals* ]] && [ "${token}" = "=" ]
+        then
+            #SA_COV
+            # Equals sign after a long flag (mandatory or optional value)
+            _sa_tty_echo INFO "${ind}consuming '='"
+            expecting="value"
+        elif [ "${expecting}" = "value" ] || [ "${expecting}" = "value/equals" ]
+        then
+            #SA_COV
+            _sa_tty_echo INFO "${ind}value, consuming: '${token}'"
+            map_name="${sa_mapnames[${current_flag}]}"
+            declare -n option="${map_name}"
+            if [ "${option[list]}" = "true" ]
+            then
+                #SA_COV
+                if [[ "${COMP_WORDBREAKS}" = *${list_separator}* ]]
+                then
+                    #SA_COV
+                    # List separator is one of the word break characters and will thus
+                    # be processed as a separate token.
+                    expecting=option/param/separator
+                else
+                    #SA_COV
+                    # List separator are included in the (value) token.
+                    expecting=option/param
+                    current_flag=""
+                fi
+            else
+                #SA_COV
+                expecting=option/param
+                current_flag=""
+            fi
+        else
+            #SA_COV
+            case "${token}" in
+                --)
+                    #SA_COV
+                    current_flag=""
+                    expecting="param"
+                    _sa_tty_echo INFO "${ind}flags over"
+                    ;;
+                -[a-zA-Z0-9]*)
+                    #SA_COV
+                    # Loop through the characters after the '-' to handle combination of flags. For example,
+                    # -vvv
+                    # -vhssize (-v -h -ssize)
+                    # 1. If the character is novalue flag move to the next one.
+                    #    If this was the last one (maybe the only): expecting=option/param
+                    # 2. If the flag takes a value: check if there is one (the following characters)
+                    #  - yes: expecting=option/param
+                    #  -  no: expecting=value
+                    #  ...and terminate
+                    # 3. If the flag takes an optional value: check if there is one (the following characters)
+                    #  - yes: expecting=option/param
+                    #  -  no: expecting=option/param
+                    #  ...so actually there's no need to check for the value
+                    # 4. If the character is an invalid (non-existing) flag terminate.
+                    for (( i=1; i<${#token}; i++ ))
+                    do
+                        #SA_COV
+                        local flag="-${token:i:1}"
+                        local map_name="${sa_mapnames[${flag}]}"
+                        if [ -n "${map_name}" ]
+                        then
+                            #SA_COV
+                            declare -n option="${map_name}"
+                            if [ "${option[type]}" = "novalue" ]
+                            then
+                                #SA_COV
+                                # Novalue (short) flag: just skip to the next one
+                                _sa_tty_echo INFO "${ind}option (novalue): '${flag}'"
+                                expecting=option/param
+                            elif [ "${option[type]}" = "value" ]
+                            then
+                                #SA_COV
+                                # Value (short) flag: check if this is the last character of the token
+                                if [ "${i}" -eq $(( ${#token} - 1 )) ]
+                                then
+                                    #SA_COV
+                                    # Last character, for example: "command -vu jack" (verbose, user: jack)
+                                    _sa_tty_echo INFO "${ind}option (next: value), terminating: '${flag}'"
+                                    current_flag="${flag}"
+                                    expecting=value
+                                else
+                                    #SA_COV
+                                    # Characters follow, for example: "command -vujack" (verbose, user: jack)
+                                    _sa_tty_echo INFO "${ind}option and value: '-${token:i:1} ${token:i+1}'"
+                                    current_flag=""
+                                    expecting=option/param
+                                fi
+                                break
+                            elif [ "${option[type]}" = "optionalvalue" ]
+                            then
+                                #SA_COV
+                                # Optional value (short) flag: handle the following scenarios in the same way:
+                                # 1. command -stime param1 # Sort by time
+                                # 2. command -s param1     # Sort by (some) default criteria e.g. name
+                                # In both cases the next token is not related to the flag.
+                                _sa_tty_echo INFO "${ind}option (and optional value): '-${token:i}'"
+                                current_flag=""
+                                expecting=option/param
+                                break
+                            elif [ "${option[type]}" = "multivalue" ]
+                            then
+                                #SA_COV
+                                # List value (short) flag: handle as value flag + store the list separator
+                                if [ "${i}" -eq $(( ${#token} - 1 )) ]
+                                then
+                                    #SA_COV
+                                    # Last character, for example: "command -vd Tim+Tom" (verbose, dogs: Tim and Tom)
+                                    _sa_tty_echo INFO "${ind}option (next: multivalue), terminating: '${flag}'"
+                                    current_flag="${flag}"
+                                    expecting=value
+                                    if [ "${option[list]}" = "true" ]
+                                    then
+                                        #SA_COV
+                                        list_separator="${option[listseparator]}"
+                                    else
+                                        #SA_COV
+                                        list_separator=""
+                                    fi
+                                else
+                                    #SA_COV
+                                    # Characters follow, for example: "command -vdTim+Tom" (verbose, dogs: Tim and Tom)
+                                    _sa_tty_echo INFO "${ind}option and list value, terminating: '-${token:i}'"
+                                    current_flag=""
+                                    expecting=option/param
+                                fi
+                                break
+                            fi
+                        else
+                            #SA_COV
+                            _sa_tty_echo INFO "${ind}ERROR: invalid (short) flag: '${flag}'"
+                            expecting=option/param
+                        fi
+                    done
+                    ;;
+                --[a-zA-Z0-9]*)
+                    #SA_COV
+                    # Long flag might be of form --example-flag=examplevalue but '=' should be one of
+                    # the word break characters and thus will be processed as a separate token.
+                    local flag="${token}"
+                    local map_name="${sa_mapnames[${flag}]}"
+                    if [ -n "${map_name}" ]
+                    then
+                        #SA_COV
+                        declare -n option="${map_name}"
+                        if [ "${option[type]}" = "novalue" ]
+                        then
+                            #SA_COV
+                            _sa_tty_echo INFO "$${ind}long option (novalue): '${flag}'"
+                            expecting=option/param
+                        elif [ "${option[type]}" = "value" ]
+                        then
+                            #SA_COV
+                            _sa_tty_echo INFO "$${ind}long option (next: value/equals): '${flag}'"
+                            current_flag="${flag}"
+                            expecting=value/equals
+                        elif [ "${option[type]}" = "optionalvalue" ]
+                        then
+                            #SA_COV
+                            _sa_tty_echo INFO "$${ind}long option (optional value): '${token}'"
+                            current_flag="${flag}"
+                            expecting=option/param/equals
+                        elif [ "${option[type]}" = "multivalue" ]
+                        then
+                            #SA_COV
+                            if [ "${option[list]}" = "true" ]
+                            then
+                                #SA_COV
+                                _sa_tty_echo INFO "$${ind}long option (next: list/equals), (list separator: '${option[listseparator]}'): '${flag}'"
+                                list_separator="${option[listseparator]}"
+                            else
+                                #SA_COV
+                                _sa_tty_echo INFO "$${ind}long option (next: (multi)value)): '${flag}'"
+                                list_separator=""
+                            fi
+                            current_flag="${flag}"
+                            expecting=value/equals
+                        fi
+                    else
+                        #SA_COV
+                        _sa_tty_echo INFO "${ind}ERROR: invalid (long) flag: '${flag}'"
+                        expecting=option/param
+                    fi
+                    ;;
+                "=")
+                    #SA_COV
+                    if [[ "${expecting}" =~ *equals* ]]
+                    then
+                        #SA_COV
+                        _sa_tty_echo INFO "${ind}equals '=', consuming"
+                        expecting=value
+                    else
+                        #SA_COV
+                        _sa_tty_echo INFO "${ind}ERROR: not expecting '='"
+                        expecting=option/param
+                    fi
+                    ;;
+                *)
+                    #SA_COV
+                    _sa_tty_echo INFO "${ind}param(${expected_pos_parameter}), consuming: '${token}'"
+                    (( expected_pos_parameter++ ))
+                    expecting="option/param"
+                    ;;
+            esac
+        fi
+        #SA_COV
+        _sa_tty_echo INFO "${ind}expecting: ${expecting}"
+    done
+    sa_toc_time completion_state
+
+    #SA_COV
+    # Previous command line tokens processed: generate the auto completion
+    # values based on the current token and the state of the command line
+    # as indicated by the state machine.
+    sa_tic_time completion_operation
+    _sa_tty_echo INFO -n $'\n'"OPERATION: "
+    case "${expecting}" in
+        option/param|option/param/equals|option/param/separator)
+            #SA_COV
+            if [ "${expecting}" = "option/param/equals" ] && [ "${cur}" = "=" ]
+            then
+                #SA_COV
+                # command --sort=<tab>
+                _sa_tty_echo INFO "return option values for '${current_flag}' (after '=')"
+                _simpleargs_complete_value "${sa_mapnames[${current_flag}]}" "" ""
+                compopt -o filenames
+            elif [ "${expecting}" = "option/param/separator" ] && [ "${cur}" = "${list_separator}" ]
+            then
+                #SA_COV
+                # command --cats Garfield:
+                _sa_tty_echo INFO "return all the list options (after '${list_separator}')"
+                _simpleargs_complete_value "${sa_mapnames[${current_flag}]}" "" ""
+                compopt -o filenames
+            else
+                #SA_COV
+                if [[ "${cur}" = --* ]] || [ "${cur}" = "-" ]
+                then
+                    #SA_COV
+                    # --sor<tab> OR -<tab>
+                    COMPREPLY=( $(compgen -W "${sa_completable_flags}" -- "${cur}" ) )
+                    _sa_tty_echo INFO "return completable flags"
+                    compopt -o filenames
+                elif [[ "${cur}" = -* ]]
+                then
+                    #SA_COV
+                    # command -u user -vts<tab>
+                    _sa_tty_echo INFO "loop through characters to see what to return"
+                    for (( i=1; i<${#cur}; i++ ))
+                    do
+                        #SA_COV
+                        local flag="-${token:i:1}"
+                        _sa_tty_echo INFO -n "${ind}${flag}: "
+                        local map_name="${sa_mapnames[${flag}]}"
+                        if [ -n "${map_name}" ]
+                        then
+                            #SA_COV
+                            declare -n option="${map_name}"
+                            if [ "${option[type]}" = "novalue" ]
+                            then
+                                #SA_COV
+                                _sa_tty_echo INFO "novalue flag (iterate forward)"
+                            elif [ "${option[type]}" = "value" ]
+                            then
+                                #SA_COV
+                                _sa_tty_echo INFO "value flag"
+                                local value="${cur:i+1}"
+                                break
+                            elif [ "${option[type]}" = "optionalvalue" ]
+                            then
+                                #SA_COV
+                                _sa_tty_echo INFO "optional value flag"
+                                local value="${cur:i+1}"
+                                break
+                            elif [ "${option[type]}" = "multivalue" ]
+                            then
+                                #SA_COV
+                                _sa_tty_echo INFO "multivalue flag"
+                                local value="${cur:i+1}"
+                                break
+                            fi
+                        else
+                            #SA_COV
+                            _sa_tty_echo INFO "ERROR, invalid flag"
+                        fi
+                    done
+
+                    # Handle the actual completion generation
+                    if [ -n "${map_name}" ]
+                    then
+                        #SA_COV
+                        if [ "${option[type]}" = "novalue" ]
+                        then
+                            #SA_COV
+                            _sa_tty_echo INFO "${ind}Last flag is of type ${option[type]}: appending space"
+                            COMPREPLY=( "${cur}" ) # Complete by appending a space
+                        elif [ "${option[type]}" = "optionalvalue" ] || [ -n "${value}" ]
+                        then
+                            #SA_COV
+                            _sa_tty_echo INFO "${ind}Last flag type: '${option[type]}' (value: '${value}'): return values"
+                            _simpleargs_complete_value "${map_name}" "${cur:0:i+1}" "${value}"
+                            compopt -o filenames
+                        else
+                            #SA_COV
+                            _sa_tty_echo INFO "${ind}Last flag type: '${option[type]}' (value: '${value}'): appending space"
+                            COMPREPLY=( "${cur}" ) # Complete by appending a space
+                        fi
+                    else
+                        #SA_COV
+                        # Falls back to expecting option/param which might
+                        # or might not be what the user expects or wants.
+                        _sa_tty_echo INFO "${ind}ERROR: Last flag is invalid"
+                    fi
+                else
+                    #SA_COV
+                    # command -u user input.tx<tab>
+                    _sa_tty_echo INFO "return param(${expected_pos_parameter})"
+                    _simpleargs_complete_param "${expected_pos_parameter}" "${cur}"
+                fi
+            fi
+            ;;
+        param)
+            #SA_COV
+            # command -u user -- input1.txt <tab>
+            _sa_tty_echo INFO "return param(${expected_pos_parameter}) (expecting only param)"
+            _simpleargs_complete_param "${expected_pos_parameter}" "${cur}"
+            ;;
+        value|value/equals)
+            #SA_COV
+            if [ "${expecting}" = "value/equals" ] && [ "${cur}" = "=" ]
+            then
+                #SA_COV
+                # command --baudrate=<tab>
+                _sa_tty_echo INFO "return option values for '${current_flag}' (after '=')"
+                _simpleargs_complete_value "${sa_mapnames[${current_flag}]}" "" ""
+                compopt -o filenames
+            else
+                #SA_COV
+                # command -u <tab>
+                # command --baudrate <tab>
+                # command --cats Elmer:<tab>
+                # command --dogs Jack,<tab>
+
+                declare -n option="${sa_mapnames[${current_flag}]}"
+                if [ "${option[type]}" = "multivalue" ]
+                then
+                    #SA_COV
+                    if [ "${option[list]}" = "true" ]
+                    then
+                        #SA_COV
+                        if [[ "${COMP_WORDBREAKS}" = *${option[listseparator]}* ]]
+                        then
+                            #SA_COV
+                            # List separator is in COMP_WORDBREAKS
+                            _sa_tty_echo INFO "list: return option values for '${current_flag}'"
+                            _simpleargs_complete_value "${sa_mapnames[${current_flag}]}" "" "${cur}"
+                        else
+                            #SA_COV
+                            # List separator is NOT in COMP_WORDBREAKS: the completion value
+                            # must be prepended by the token value up to (and including)
+                            # the list separator.
+                            _sa_tty_echo INFO "list: return option values for '${current_flag}' (separator: '${option[listseparator]}')"
+
+                            # Split token into prefix and suffix
+                            # Token       |Prefix       |Suffix
+                            # ----------------------------------
+                            # ad          |             |ad
+                            # add         |             |add
+                            # add,        |add,         |
+                            # add,remo    |add,         |remo
+                            # add,remove, |add,remove,  |
+                            local prefix="" suffix=""
+                            for (( i=0; i <${#token}; i++ ))
+                            do
+                                #SA_COV
+                                suffix="${suffix}${token:i:1}"
+                                if [ "${token:i:1}" = "${option[listseparator]}" ]
+                                then
+                                    #SA_COV
+                                    prefix="${prefix}${suffix}"
+                                    suffix=""
+                                fi
+                            done
+                            _simpleargs_complete_value "${sa_mapnames[${current_flag}]}" "${prefix}" "${suffix}"
+                        fi
+                        if [ ${#COMPREPLY[@]} -eq 1 ]
+                        then
+                            #SA_COV
+                            _sa_tty_echo INFO "${ind}only one completion ('${COMPREPLY[0]}'): adding completion+separator"
+                            COMPREPLY[1]="${COMPREPLY[0]}${list_separator}"
+                        fi
+                        #SA_COV
+                        _sa_tty_echo INFO "${ind}list value: not appending space"
+                        compopt -o nospace
+                    else
+                        #SA_COV
+                        _sa_tty_echo INFO "${ind}multivalue (not list): return option values for '${current_flag}'"
+                        _simpleargs_complete_value "${sa_mapnames[${current_flag}]}" "" "${cur}"
+                    fi
+                else
+                    #SA_COV
+                    _sa_tty_echo INFO "single value: return option values for '${current_flag}'"
+                    _simpleargs_complete_value "${sa_mapnames[${current_flag}]}" "" "${cur}"
+                fi
+            fi
+            ;;
+        *)
+            #SA_COV
+            _sa_tty_echo INFO "ERROR: unknown state, expecting: '${expecting}'"
+            ;;
+    esac
+    sa_toc_time completion_operation
+
+    #SA_COV
+    _sa_tty_echo CONFIG "$(compopt)"
+    _sa_tty_echo FINER -n "COMPREPLY: "
+    for i in ${!COMPREPLY[@]}
+    do
+        #SA_COV
+        _sa_tty_echo FINER -n "[${i}]='${COMPREPLY[${i}]}' "
+    done
+    _sa_tty_echo FINER ""
+
+    if [ "${_sa_completion_benchmark}" = "true" ]
+    then
+        #SA_COV
+        _sa_tty_echo INFO "$(sa_toc_and_print completion)"
+        _sa_tty_echo INFO "${ind}$(sa_print_toc_time completion_state)"
+        _sa_tty_echo INFO "${ind}$(sa_print_toc_time completion_operation)"
+        _sa_tty_echo INFO "${ind}${ind}$(sa_print_toc_time completion_filter_candidates)"
+    fi
+    __sa_end=$(date +%s%3N)
+    _sa_tty_echo INFO "Took: $(( __sa_end - __sa_start )) ms"
+    # The same figure can be echoed to current terminal (I don't remember what this is used for.)
+    [ "${_sa_echo_overall_benchmark}" = "true" ] && echo "Took: $(( __sa_end - __sa_start )) ms"
+
+    # Clear variables that were set when the cache file was sourced.
+    # Note that the variables that should not be cleared should start e.g. with '_sa_'
+    unset -v ${!sa_*}
+    return 0
+}
+
+_simpleargs_complete_param() {
+    local expected_pos_parameter="$1"
+    local current_value="${2}"
+
+    #SA_COV
+    # Check which parameter (if any) are we trying to complete and then
+    # delegate to _simpleargs_complete_value
+    if [ "${#sa_parammaps[@]}" -eq 0 ]
+    then
+        #SA_COV
+        _sa_tty_echo INFO "${ind}no parameters defined: use Bash default completion"
+        compopt -o default # Fallback completion
+    elif [ "${expected_pos_parameter}" -lt "${#sa_parammaps[@]}" ]
+    then
+        #SA_COV
+        local map_name="${sa_parammaps[${expected_pos_parameter}]}"
+        declare -n param="${map_name}"
+        _sa_tty_echo INFO "${ind}parameter definition available (${param[fullname]}): return param(${expected_pos_parameter})"
+        _simpleargs_complete_value "${map_name}" "" "${current_value}"
+    else
+        #SA_COV
+        local last_map_name="${sa_parammaps[-1]}"
+        declare -n last_param="${last_map_name}"
+
+        if [[ "${last_param[fullname]}" = *... ]]
+        then
+            #SA_COV
+            _sa_tty_echo INFO "out of parameters, the last parameter '${last_param[fullname]}' is varargs"
+            _simpleargs_complete_value "${last_map_name}" "" "${current_value}"
+        else
+            #SA_COV
+            _sa_tty_echo INFO "${ind}out of formal parameters"
+            compopt -o bashdefault # Fallback completion
+        fi
+    fi
+    return 0
+}
+
+_simpleargs_complete_value() {
+    #SA_COV
+    local mapname="${1}"
+    local prefix="${2}"
+    local current_value="${3}"
+
+    # For example
+    #   > command -vvupostgr
+    # would produce the following invocation arguments
+    #   mapname=sa_option_u__user
+    #   current_value=postgr
+    #   prefix=-vvu
+
+    declare -n entry="${mapname}"
+    local compgen_string i
+
+    _sa_tty_echo CONFIG "${ind}Analyzing completions for ${entry[entrytype]} '${entry[fullname]}'"
+    _sa_tty_echo CONFIG "${ind}${ind}current_value: '${current_value}'"
+    _sa_tty_echo CONFIG "${ind}${ind}prefix: '${prefix}'"
+    if [ -n "${entry[validvaluesarray]}" ] ||
+           [ -n "${entry[validvaluesfile]}" ] ||
+           [ -n "${entry[validvaluescommand]}" ]
+    then
+        #SA_COV
+        if [ -n "${entry[validvaluesarray]}" ]
+        then
+            #SA_COV
+            declare -n validvalues="${entry[validvaluesarray]}"
+        elif [ -n "${entry[validvaluesfile]}" ]
+        then
+            #SA_COV
+            local validvaluesfile=$(envsubst <<< "${entry[validvaluesfile]}")
+            _sa_tty_echo CONFIG "${ind}${ind}validvaluesfile: '${validvaluesfile}'"
+            mapfile -t validvalues < "${validvaluesfile}"
+        elif [ -n "${entry[validvaluescommand]}" ]
+        then
+            #SA_COV
+            local validvaluescommand="${entry[validvaluescommand]}"
+            _sa_tty_echo CONFIG "${ind}${ind}validvaluescommand: '${validvaluescommand}'"
+            mapfile -t validvalues < <(eval "${validvaluescommand}")
+        fi
+
+        if [ -n "${prefix}" ]
+        then
+            #SA_COV
+            _sa_tty_echo CONFIG "${ind}${ind}prepending prefix: '${prefix}'"
+            for i in ${!validvalues[@]}
+            do
+                #SA_COV
+                validvalues[${i}]="${prefix}${validvalues[${i}]}"
+            done
+        fi
+
+        if [ ${#validvalues[@]} -eq 0 ]
+        then
+            #SA_COV
+            compgen_string=""
+        else
+            #SA_COV
+            compgen_string="$(printf "%q " "${validvalues[@]}")"
+            compgen_string="${compgen_string:0:-1}" # Strip off the trailing space character
+        fi
+        #SA_COV
+        _sa_tty_echo CONFIG "${ind}${ind}valid values string: '${compgen_string}'"
+        mapfile -t COMPREPLY < <( compgen -W "${compgen_string}" -- "${prefix}${current_value}" )
+
+        # By default don't consider the valid values to be filenames. This deals with the problem
+        # when we have a valid value like 'dev' AND our current working directory contains
+        # a directory named 'dev', in which case the autocomplete would erroneously expand d -> dev/
+        compopt +o filenames
+        # However, if any of the COMPREPLY values contains characters that need escaping revert
+        # to using filenames (which will handle the escaping: wit<tab> -> with\ space)
+        local _sa_valid_value
+        local _sa_no_escape_chars_regex='^[a-zA-Z0-9_]*$'
+        for _sa_compreply_value in "${COMPREPLY[@]}"
+        do
+            #SA_COV
+            if ! [[ "${_sa_compreply_value}" =~ ${_sa_no_escape_chars_regex} ]]
+            then
+                #SA_COV
+                compopt -o filenames
+                break
+            fi
+        done
+    else
+        #SA_COV
+        # No valid values defined: provide file values as completions (and possibly
+        # filter out values that do not pass the validation rules.)
+
+        # If the completed value is a non-existing file or dir (!exists, !file, !dir)
+        # generate all files as completions and do not filter based on validation rules.
+        # This facilitates the following use case
+        # > cp my-data.txt my-da<tab>
+        # > cp my-data.txt my-data.txt
+        # > cp my-data.txt my-data.txt.bkp
+        # (Even if the value cannot be the completion value per se it might be derived
+        # from the completion value for example by adding a suffix.)
+        _sa_tty_echo CONFIG "${ind}${ind}no valid values defined, check validation rules:"
+        local complete_every_file=false
+        local validation_array_name
+        for validation_array_name in ${entry[validationarraynames]}
+        do
+            #SA_COV
+            declare -n validation_array=${validation_array_name}
+            _sa_tty_echo CONFIG -n "${ind}${ind}${ind}${validation_array[*]} (negate: ${sa_validation_command_modifiers[${validation_array_name}_negate]})"
+            if { [ "${validation_array[0]}" = "exists" ] ||
+                     [ "${validation_array[0]}" = "file" ] ||
+                     [ "${validation_array[0]}" = "dir" ]; } &&
+                   [ "${sa_validation_command_modifiers[${validation_array_name}_negate]}" = "true" ]
+            then
+                #SA_COV
+                _sa_tty_echo CONFIG " (complete every file)"
+                complete_every_file=true
+            else
+                #SA_COV
+                _sa_tty_echo CONFIG ""
+            fi
+        done
+
+        # Complete file values even if nothing implies that this is a file value
+        # since this is the expected behaviour:
+        # > sa_parse "$0" <input file>
+        # The parameter has no additional information about its nature. However,
+        # the parameter is likely to be a file and if it isn't there is no harm
+        # in providing file completions.
+        _sa_tty_echo CONFIG "complete files"
+        # Set IFS temporarily to newline to handle file names with spaces correctly
+        IFS=$'\n'
+        declare -a compreply_candidates=( $(compgen -f -- "${current_value}") )
+        unset IFS
+        declare -p compreply_candidates | _sa_tty_echo FINER
+
+        sa_tic_time completion_filter_candidates
+        # Decide which candidate completions to show to the user
+        COMPREPLY=()
+        local sa_candidate
+        for sa_candidate in "${compreply_candidates[@]}"
+        do
+            #SA_COV
+            # Replace ~ with ${HOME}
+            # This allows auto completing e.g. ~/bin/sc<tab> --> /home/nick/bin/script
+            # Note that ${HOME}/bin/sc<tab> behaviour depends on direxpand shell option (shopt)
+            sa_candidate="${sa_candidate/#\~/${HOME}}"
+
+            if [[ "${sa_candidate}" = *"*" ]]
+            then
+                #SA_COV
+                _sa_tty_echo FINER "${ind}${ind}candidate: '${sa_candidate}' (ends in '*': filtering out)"
+            elif ${complete_every_file}
+            then
+                #SA_COV
+                _sa_tty_echo FINER "${ind}${ind}candidate: '${sa_candidate}' (OK, completing every file)"
+                COMPREPLY+=( "${sa_candidate}" )
+            elif [ -d "${sa_candidate}" ]
+            then
+                #SA_COV
+                _sa_tty_echo FINER "${ind}${ind}candidate: '${sa_candidate}' (OK, directory)"
+                COMPREPLY+=( "${sa_candidate}" )
+            else
+                #SA_COV
+                # Filter out candidate completions that fail the validation.
+                declare -a validation_errors=()
+                sa_validate_validationarray sa_candidate "${mapname}" "${entry[id]}"
+
+                if [ "${#validation_errors[@]}" -eq 0 ]
+                then
+                    #SA_COV
+                    _sa_tty_echo FINER "${ind}${ind}candidate: '${sa_candidate}' (OK)"
+                    COMPREPLY+=( "${sa_candidate}" )
+                else
+                    #SA_COV
+                    _sa_tty_echo FINER "${ind}${ind}candidate: '${sa_candidate}' (FAIL)"
+                    local validation_error
+                    for validation_error in "${validation_errors[@]}"
+                    do
+                        #SA_COV
+                        _sa_tty_echo FINEST "${ind}${ind}${ind} ${validation_error}"
+                    done
+                fi
+            fi
+        done
+        sa_toc_time completion_filter_candidates
+        compopt -o filenames
+
+        # Covers the cases where user types something like
+        # > command $HOME/bi<tab>
+        # The COMPREPLY array is left empty since the globbing
+        # is tried on literal $HOME/bi* (environment variable
+        # unexpanded). So, let Readline's default completion
+        # make the initial completion into something like
+        # > command /home/jack/bin/
+        # and continue with the custom completion from there
+        # onwards. Note that the user should have direxpand
+        # option set
+        # > shopt -s direxpand
+        #
+        # Bash manual:
+        # direxpand
+        # If set, Bash replaces directory names with the results
+        # of word expansion when performing filename completion.
+        # This changes the contents of the readline editing
+        # buffer. If not set, Bash attempts to preserve what
+        # the user typed.
+        if [ ${#COMPREPLY[*]} -eq 0 ]
+        then
+            #SA_COV
+            # TODO: revise if condition
+            _sa_tty_echo FINE "${ind}Running: envsubst --variables -- \"${current_value}\""
+            if [ "$(envsubst --variables -- "${current_value}" | wc -l)" -gt 0 ] ||
+                   grep --silent '^~' <<< "${current_value}" ||
+                   grep --silent '^${' <<< "${current_value}"
+            then
+                #SA_COV
+                _sa_tty_echo FINE "${ind}No completions and current value contains an environment variable or tilde: use Bash default completion"
+                _sa_tty_echo FINE "${ind}${ind}$(envsubst --variables -- "${current_value}")"
+
+                # Prevent this:
+                # > myscript $HOM<tab>
+                # > myscript \$HOM
+                compopt +o filenames
+                # Enable completion of shell variables
+                compopt -o bashdefault
+                # Enable this:
+                # > myscript $HOME/<tab>
+                # > myscript /home/jack/
+                compopt -o plusdirs
+            fi
+        fi
+    fi
+}
+
+# TODO: test:
+# process-text-files --path $HO<tab>
+# process-text-files $HO<tab>
+# process-text-files ${HO<tab>
+# process-text-files --path ${HO<tab>
+# validationexample --sort=ye<tab>
+
+# Usage: _sa_tty_echo <log level> <message>
+# log_level: a positive integer or symbolic name (ERROR, WARN, ...)
+_sa_tty_echo() {
+    [ -n "${_sa_completion_tty}" ] || return 0
+    if [ $# -eq 0 ]
+    then
+        echo "Usage: ${FUNCNAME} <log level> <message>" >&2
+        echo "e.g. ${FUNCNAME} 5 \"Hello world!\""
+        return 1
+    fi
+    local msg_level="$1"; shift
+    if ! [ "${msg_level}" -eq "${msg_level}" ] 2>/dev/null
+    then
+        case "${msg_level}" in
+            ERROR) msg_level=70;;
+            WARN) msg_level=60;;
+            INFO) msg_level=50;;
+            CONFIG) msg_level=40;;
+            FINE) msg_level=30;;
+            FINER) msg_level=20;;
+            FINEST) msg_level=10;;
+            *) echo "${FUNCNAME}: Invalid log level '${msg_level}'" >&2
+               return 1
+               ;;
+        esac
+    fi
+
+    if [ -z "${_sa_ttyecho_level}" ] || [ "${msg_level}" -ge "${_sa_ttyecho_level}" ]
+    then
+        if [ $# -eq 0 ]
+        then
+            cat >> "${_sa_completion_tty}"
+        else
+            echo "$@" >> "${_sa_completion_tty}"
+        fi
+    fi
+    return 0
+}
+
+# > _simpleargs_print_ruler 16 "myscript --foo l"
+# 0         1
+# 01234567890123456789
+#                 |
+# myscript --foo l
+_simpleargs_print_ruler() {
+    local last="$1"
+    local line="$2"
+    local tens=0
+
+    # Print "tens" (the first row)
+    if [ "${last}" -ge 10 ]
+    then
+        while [ $((tens * 10)) -le "${last}" ]
+        do
+            printf "${tens}         "
+            ((tens++))
+        done
+        echo
+    fi
+
+    # Print ones (the second row)
+    tens=0
+    while [ $((10 * tens)) -le "${last}" ]
+    do
+        printf "0123456789"
+        ((tens++))
+    done
+    echo
+
+    # Print "cursor position" (the third row)
+    printf "%*s\n" "$((last + 1))" "|"
+
+    # Print the command line (the last row)
+    if [ -n "${line}" ]
+    then
+        printf "%s\n" "${line}"
+    fi
+}

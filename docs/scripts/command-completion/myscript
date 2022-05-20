@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+# -------------------------------- simpleargs --------------------------------
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+sa_parse "$0" \
+         -a -b -c \
+         -v/--verbose \
+         -p port \
+         -s/--security low,medium,high@default \
+         --compass-point north,south,west,east \
+         -o/--order none@default,name,type,size @optionalvalue \
+         \
+         --signal arg @validvaluescommand="compgen -A signal" \
+         --user-or-group arg \
+         @validvaluescommand="compgen -A user; compgen -A group" \
+         --write-log log_file @@!exists \
+         --custom-config @@file @@glob "*.rc" \
+         "<operation>" @validvalues=scan,prune,upload \
+         "<input file>" @@glob "*.c"
+
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------

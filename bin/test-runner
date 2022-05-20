@@ -1,0 +1,298 @@
+#!/usr/bin/env bash
+
+. "${SIMPLEARGS_PROJECT}"/src/simpleargs-dev-utils
+SA_SKIP_TEST_EXIT_CODE=31
+
+if ! [ -d "${SA_TEST_RESOURCES}" ]
+then
+    echo "No such test resources directory: '${SA_TEST_RESOURCES}'" >&2
+    echo "SA_TEST_RESOURCES should point to the simpleargs test resources directory" >&2
+    exit 1
+fi
+
+declare -A options=()
+while [[ "$1" = -* ]]
+do
+    echo "Recording option: '$1'"
+    options+=( [$1]="$1" )
+    shift
+done
+
+fail_immediately=false
+[ -n "${options[--fail-immediately]}" ] && fail_immediately=true
+flag_clear_cache=false
+[ -n "${options[--clear-cache]}" ] && flag_clear_cache=true
+output_to_screen=false
+[ -n "${options[--output-to-screen]}" ] && output_to_screen=true
+
+skipped_tests=()
+failed_tests=()
+all_tests_passed=true
+passed_tests_count=0
+failed_tests_count=0
+
+sa_test_runtime_dir=/tmp/simpleargs-test-runner
+mkdir -p "${sa_test_runtime_dir}"
+
+for test_unit in "$@"
+do
+    all_tests_in_unit_passed=true
+
+    # Accept
+    # 1. my-test.sh            (Run all test cases in the file)
+    # 2. my-test.sh:test-case1 (Run only the test case specified)
+    if [[ "${test_unit}" = *:* ]]
+    then
+        test_file=$(cut --delimiter=: --fields=1 <<< "${test_unit}")
+        test_case_to_run=$(cut --delimiter=: --fields=2 <<< "${test_unit}")
+    else
+        test_file="${test_unit}"
+        test_case_to_run=""
+    fi
+
+    # Skip e.g. resources directory (e.g. when specified as a parameter using *)
+    [ -d "${test_file}" ] && continue
+
+    if [ -x "${test_file}" ]
+    then
+        true
+    else
+        echo "File does not exist or not executable: '${test_file}'"
+        exit 1
+    fi
+
+    test_file_basename=$(basename "${test_file}")
+    test_cases=( $(grep -nE '^test_[a-zA-Z_0-9]+\(\) {' "${test_file}" | sed 's/() {$//') )
+
+    if grep '^#skipfile' --silent < "${test_file}"
+    then
+        printf "%-103s" "# ${test_file}"
+        echo "SKIP FILE"
+        skipped_tests+=( "${test_file_basename}:*" )
+        continue
+    else
+        echo "# ${test_file}"
+    fi
+
+    for test_case in "${test_cases[@]}"
+    do
+        # test_case=<line no>:<test function name>
+        test_case_lineno=$(cut --delimiter=: --fields=1 <<< "${test_case}")
+        test_case_name=$(cut --delimiter=: --fields=2 <<< "${test_case}")
+
+        # Create temporary directory for each test case easily accessible with ${sa_test_dir}
+        export sa_test_dir="${sa_test_runtime_dir}/test-dirs/${test_file_basename}-${test_case_name}"
+        mkdir -p "${sa_test_dir}"
+        ln --symbolic --force --no-dereference "${sa_test_dir}" "${sa_test_runtime_dir}"/current-test
+
+        # The file that contains simpleargs header and test cases
+        instrumented_test_file=${sa_test_dir}/${test_file_basename}
+        # The file that calls the instrumented test file with correct arguments
+        run_helper=${sa_test_dir}/sa-run-helper
+        export sa_test_stdout=${sa_test_dir}/sa-stdout
+        export sa_test_stderr=${sa_test_dir}/sa-stderr
+        export sa_test_output=${sa_test_dir}/sa-test-output
+
+        if [ -z "${test_case_to_run}" ] || [ "${test_case_to_run}" = "${test_case_name}" ]
+        then
+            #print_variables test_case test_case_lineno test_case_name
+
+            # Append the code that runs the test case function
+            cp "${test_file}" "${instrumented_test_file}"
+            {
+                echo
+                echo '# Source test framework functions'
+                echo '. ${SIMPLEARGS_PROJECT}/src/simpleargs-test-utils ||'
+                echo '    { echo "Failed to source test utils" >&2; exit 1; }'
+                echo "# Referred to by 'skip' (simpleargs-test-utils)"
+                echo "SA_SKIP_TEST_EXIT_CODE=${SA_SKIP_TEST_EXIT_CODE}"
+                echo "# Test failure -> 'errortrap' assigns exit_code=1 (simpleargs-test-utils)"
+                echo 'exit_code=0'
+                echo "${test_case_name}"' "$@"'
+                echo 'exit "${exit_code}"'
+            } >> "${instrumented_test_file}"
+
+            # Insert defnition of error trap (function defined in simpleargs-test-utils)
+            trap_statement="trap 'errortrap ${test_case_name} \${LINENO} \$?' ERR;"
+            sed -i "/^${test_case_name}() {/ s/$/ ${trap_statement}/" "${instrumented_test_file}"
+
+            # Build the script that runs the instrumented test file
+            echo '#!/usr/bin/env bash' > "${run_helper}"
+            echo '# test_file_basename might be needed by the test file to e.g. delete' >> "${run_helper}"
+            echo '# the cached definitions for the script (see e.g. test "unreadable-cache")' >> "${run_helper}"
+            echo "test_file_basename=${test_file_basename}" >> "${run_helper}"
+
+            source_before=()
+            source_after=()
+            clear_cache=${flag_clear_cache}
+            gen_cache=false
+            skip=false
+
+            # The first line after the test case function definition specifies the arguments for the test script
+            args_line=$(sed -n "$((test_case_lineno + 1)) p" "${test_file}")
+            args_string=""
+            if grep --silent -E '^ +#' <<< "${args_line}"
+            then
+                args_string=${args_line#*#}
+            else
+                echo "Malformed arguments line ($((test_case_lineno + 1))): '${args_line}'"
+                exit 1
+            fi
+
+            # Search for test directive strings from the second line onwards after the test case function
+            line_index=2
+            while true
+            do
+                line=$(sed -n "$((test_case_lineno + line_index)) p" "${test_file}")
+                if grep --silent -E '^ +#[a-zA-Z]+' <<< "${line}"
+                then
+                    test_directive=$(sed -r 's/^ +#([a-zA-Z]+) ?.*/\1/' <<< "${line}")
+                    test_directive_value=$(sed -r 's/^ +#[a-zA-Z]+ ?(.*)/\1/' <<< "${line}")
+
+                    case "${test_directive}" in
+                        before)
+                            source_before+=( "${test_directive_value}" )
+                            ;;
+                        after)
+                            source_after+=( "${test_directive_value}" )
+                            ;;
+                        clearcache)
+                            clear_cache=true
+                            ;;
+                        gencache)
+                            gen_cache=true
+                            ;;
+                        resetcache)
+                            clear_cache=true
+                            gen_cache=true
+                            ;;
+                        skip)
+                            skip=true
+                            ;;
+                        *)
+                            echo "Unknown test directive '${test_directive}' (${line})"
+                            exit 1
+                            ;;
+                    esac
+                    ((line_index++))
+                elif grep --silent -E '^ +#' <<< "${line}"
+                then
+                    # Do not break until the first non-comment line
+                    ((line_index++))
+                else
+                    break
+                fi
+            done
+
+            {
+                echo
+                for line in "${source_before[@]}"
+                do
+                    echo "${line}"
+                done
+                echo "${instrumented_test_file}${args_string}"
+                echo 'test_result=$?'
+                for line in "${source_after[@]}"
+                do
+                    echo "${line}"
+                done
+            } >> "${run_helper}"
+            echo 'exit ${test_result}' >> "${run_helper}"
+            chmod u+x ${run_helper}
+
+            ${clear_cache} && sa-clear-cache ${test_file_basename}
+            ${gen_cache} && sa-gen-cache ./${test_file}
+
+            [ -f ${sa_test_stdout} ] && rm ${sa_test_stdout}
+            [ -f ${sa_test_stderr} ] && rm ${sa_test_stderr}
+            [ -f ${sa_test_output} ] && rm ${sa_test_output}
+
+            printf " - %-100s" "${test_file_basename}:${test_case_name}"
+            if $skip
+            then
+                echo "SKIP"
+                skipped_tests+=( "${test_file_basename}:${test_case_name}" )
+            else
+                if ${output_to_screen}
+                then
+                    ${run_helper} 23>&2
+                else
+                    ${run_helper} 23>${sa_test_output} >${sa_test_stdout} 2>${sa_test_stderr}
+                fi
+                exit_code=$?
+
+                if [ "${exit_code}" -eq 0 ]
+                then
+                    ((passed_tests_count++))
+                    if [ -s ${sa_test_stderr} ] # File exists and is not empty
+                    then
+                        echo "OK (e)" # OK but std(e)rr contains output
+                    else
+                        echo "OK"
+                    fi
+                elif [ "${exit_code}" -eq "${SA_SKIP_TEST_EXIT_CODE}" ]
+                then
+                    echo "SKIP (p)" # Skipped (p)rogrammatically
+                    skipped_tests+=( "${test_file_basename}:${test_case_name}" )
+                else
+                    ((failed_tests_count++))
+                    failed_tests+=( "${test_file_basename}:${test_case_name}" )
+                    echo "FAILED"
+                    if [ -s ${sa_test_output} ]
+                    then
+                        echo
+                        echo "----- Test output -----"
+                        cat ${sa_test_output}
+                        echo "-----------------------"
+                    fi
+                    if [ -s ${sa_test_stdout} ]
+                    then
+                        echo
+                        echo "----- stdout -----"
+                        cat ${sa_test_stdout}
+                        echo "------------------"
+                    fi
+
+                    if [ -s ${sa_test_stderr} ]
+                    then
+                        echo
+                        echo "----- stderr -----"
+                        cat ${sa_test_stderr}
+                        echo "------------------"
+                    fi
+                    echo
+                    all_tests_in_unit_passed=false
+                    all_tests_passed=false
+                    ${fail_immediately} && exit 1
+                fi
+            fi
+        fi
+    done
+done
+
+echo
+if ${all_tests_passed}
+then
+    echo "All ${passed_tests_count} test(s) finished SUCCESSFULLY"
+    if [ "${#skipped_tests[@]}" -gt 0 ]
+    then
+        echo
+        echo "There were skipped tests:"
+        for skipped_test in "${skipped_tests[@]}"
+        do
+            echo " - ${skipped_test}"
+        done
+    fi
+    echo
+    exit 0
+else
+    echo "There were test FAILURES (${failed_tests_count} failed out of $((failed_tests_count + passed_tests_count)))"
+    for failed_test in "${failed_tests[@]}"
+    do
+        echo " - ${failed_test}"
+    done
+    echo "${failed_tests[@]}" > ${sa_test_runtime_dir}/failed_tests
+    echo "(Use test-runner \$(cat ${sa_test_runtime_dir}/failed_tests) to re-run only the failed test cases)"
+
+    exit 1
+fi

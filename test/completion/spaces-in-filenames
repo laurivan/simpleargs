@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+
+. ${SIMPLEARGS_PROJECT}/src/simpleargs-completion-test-utils
+set -e
+init_terminal 
+# -----------------------------------------------------------------------------
+
+rm -rf /tmp/_sa
+mkdir /tmp/_sa
+cd /tmp/_sa
+touch hai.txt hui.txt hoi.txt "hai hui.txt" "hui hoi hai.txt" hai hui hoi
+
+# -----------------------------------------------------------------------------
+type_command 'cd /tmp/_sa'
+enter
+# ----------
+assert_terminal_contents <<'EOF'
+>> cd /tmp/_sa
+>> 
+EOF
+# ----------
+
+# -----------------------------------------------------------------------------
+type_command 'process-text-files '
+tabtab
+# ----------
+assert_terminal_contents <<'EOF'
+>> cd /tmp/_sa
+>> process-text-files h
+EOF
+# ----------
+# -----------------------------------------------------------------------------
+tab
+# ----------
+assert_terminal_contents <<'EOF'
+>> cd /tmp/_sa
+>> process-text-files h
+hai hui.txt      hoi.txt          hui.txt          
+hai.txt          hui hoi hai.txt  
+>> process-text-files h
+EOF
+# ----------
+
+type_command 'u'
+tab
+# ----------
+assert_terminal_contents <<'EOF'
+>> cd /tmp/_sa
+>> process-text-files h
+hai hui.txt      hoi.txt          hui.txt          
+hai.txt          hui hoi hai.txt  
+>> process-text-files hui
+EOF
+# ----------
+
+tab
+# ----------
+assert_terminal_contents <<'EOF'
+>> cd /tmp/_sa
+>> process-text-files h
+hai hui.txt      hoi.txt          hui.txt          
+hai.txt          hui hoi hai.txt  
+>> process-text-files hui
+EOF
+# ----------
+
+tab
+# ----------
+assert_terminal_contents <<'EOF'
+>> cd /tmp/_sa
+>> process-text-files h
+hai hui.txt      hoi.txt          hui.txt          
+hai.txt          hui hoi hai.txt  
+>> process-text-files hui
+hui hoi hai.txt  hui.txt          
+>> process-text-files hui
+EOF
+# ----------
+
+type_command '\ '
+tab
+# ----------
+assert_terminal_contents <<'EOF'
+>> cd /tmp/_sa
+>> process-text-files h
+hai hui.txt      hoi.txt          hui.txt          
+hai.txt          hui hoi hai.txt  
+>> process-text-files hui
+hui hoi hai.txt  hui.txt          
+>> process-text-files hui\ hoi\ hai.txt 
+EOF
+# ----------
+
+enter
+# ----------
+assert_terminal_contents <<'EOF'
+>> cd /tmp/_sa
+>> process-text-files h
+hai hui.txt      hoi.txt          hui.txt          
+hai.txt          hui hoi hai.txt  
+>> process-text-files hui
+hui hoi hai.txt  hui.txt          
+>> process-text-files hui\ hoi\ hai.txt 
+Input files:
+  'hui hoi hai.txt'
+>> 
+EOF
+# ----------
+

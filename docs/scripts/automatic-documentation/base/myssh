@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+sa_short_description="uses SSH to connect to a remote server"
+sa_long_description=(
+"Uses SSH to connect to a remote host with the specified port \
+and user. This script is only a wrapper to ssh command."
+"This is the second paragraph of the script description. \
+The paragraphs are defined as the items of an array \
+'sa_long_description'."
+)
+
+# -------------------------------- simpleargs --------------------------------
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+sa_parse "$0" \
+         --security-level low,medium,high@default \
+         @doc="Security level to use. Allowed values: @{v} \
+(default: @{d})." \
+         -p/--port port @default=22 \
+         @doc="The SSH port of the remote host. Default: @{d}." \
+         -u/--user user @default='${USER}' \
+         @doc="\
+The user used to connect to the remote host. \
+By default uses the current user." \
+         @doc="More paragraphs can be added using additional \
+@doc directives. Only the first paragraph is shown in the \
+usage printout (all of them are shown on the man page)." \
+         "<remote host>" \
+         @doc="The remote host to connect to."
+
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------
+
+echo "sshing: ${user}@${remote_host} (port: ${port}"
+# ...

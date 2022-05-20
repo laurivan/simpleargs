@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+
+. ${SIMPLEARGS_PROJECT}/src/simpleargs-completion-test-utils
+set -e
+init_terminal ${SIMPLEARGS_PROJECT}/test/resources/example-files-dir
+
+# -----------------------------------------------------------------------------
+type_command 'process-text-files -'
+tabtab
+# ----------
+assert_terminal_contents <<'EOF'
+>> process-text-files -
+EOF
+# ----------
+
+backspace
+tabtab
+# ----------
+assert_terminal_contents <<'EOF'
+>> process-text-files 
+data1.txt     sub-dir/      textual1.txt  
+data.txt      text.txt      textual.txt   
+>> process-text-files 
+EOF
+# ----------
+
+type_command 't'
+tabtab
+# ----------
+assert_terminal_contents <<'EOF'
+>> process-text-files 
+data1.txt     sub-dir/      textual1.txt  
+data.txt      text.txt      textual.txt   
+>> process-text-files text
+EOF
+# ----------
+
+type_command 'u'
+tab
+# ----------
+assert_terminal_contents <<'EOF'
+>> process-text-files 
+data1.txt     sub-dir/      textual1.txt  
+data.txt      text.txt      textual.txt   
+>> process-text-files textual
+EOF
+# ----------
+
+type_command '1'
+tab
+# ----------
+assert_terminal_contents <<'EOF'
+>> process-text-files 
+data1.txt     sub-dir/      textual1.txt  
+data.txt      text.txt      textual.txt   
+>> process-text-files textual1.txt 
+EOF
+# ----------
+
+enter
+# ----------
+assert_terminal_contents <<'EOF'
+>> process-text-files 
+data1.txt     sub-dir/      textual1.txt  
+data.txt      text.txt      textual.txt   
+>> process-text-files textual1.txt 
+Input files:
+  'textual1.txt'
+>> 
+EOF
+# ----------
+
+reset_terminal
+
+rm -rf /tmp/_sa
+mkdir -p /tmp/_sa
+cp -r ${SIMPLEARGS_PROJECT}/test/resources/example-files-dir /tmp/_sa
+type_command 'export SA_SVE=/tmp/_sa/example-files-dir/sub-dir'
+enter
+reset_terminal
+# -----------------------------------------------------------------------------
+type_command 'process-text-files $SA_SV'
+tab
+# ----------
+assert_terminal_contents <<'EOF'
+>> process-text-files $SA_SVE/
+EOF
+# ----------
+
+tab
+# ----------
+assert_terminal_contents <<'EOF'
+>> process-text-files /tmp/_sa/example-files-dir/sub-dir/
+EOF
+# ----------
+
+tabtab
+# ----------
+assert_terminal_contents <<'EOF'
+>> process-text-files /tmp/_sa/example-files-dir/sub-dir/
+data1.txt     sub-text.txt  
+>> process-text-files /tmp/_sa/example-files-dir/sub-dir/
+EOF
+# ----------
+
+type_command 'd'
+tab
+# ----------
+assert_terminal_contents <<'EOF'
+>> process-text-files /tmp/_sa/example-files-dir/sub-dir/
+data1.txt     sub-text.txt  
+>> process-text-files /tmp/_sa/example-files-dir/sub-dir/data1.txt 
+EOF
+# ----------
+
+enter
+# ----------
+assert_terminal_contents <<'EOF'
+>> process-text-files /tmp/_sa/example-files-dir/sub-dir/
+data1.txt     sub-text.txt  
+>> process-text-files /tmp/_sa/example-files-dir/sub-dir/data1.txt 
+Input files:
+  '/tmp/_sa/example-files-dir/sub-dir/data1.txt'
+>> 
+EOF
+# ----------
+
+reset_terminal

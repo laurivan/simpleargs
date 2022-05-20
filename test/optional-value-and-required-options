@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" \
+             -p/--password @optionalvalue \
+             -u/--user user @required
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_optional_value_given() {
+    # -p"secret" -u jeff
+    value 0 source_result parse_result process_result
+    value secret p password
+    value jeff user
+    empty u
+    [ $# -eq 0 ]
+}
+
+test_optional_value_given_long_form() {
+    # --password="secret123" -u jeff
+    value 0 source_result parse_result process_result
+    value secret123 p password
+    value jeff user
+    empty u
+    [ $# -eq 0 ]
+}
+
+test_optional_value_not_given() {
+    # -p -u jeff
+    value 0 source_result parse_result process_result
+    empty p password
+    [ "${password+set}" = "set" ]
+    value jeff user
+    empty u
+    [ $# -eq 0 ]
+}
+
+test_no_optionalvalue_option_given() {
+    # -u jeff
+    value 0 source_result parse_result process_result
+    empty p password
+    [ "${password+set}" = "" ]
+    value jeff user
+    empty u
+    [ $# -eq 0 ]
+}
+
+test_empty_optional_value_given() {
+    # -u jeff -p""
+    value 0 source_result parse_result process_result
+    empty p password
+    [ "${password+set}" = "set" ]
+    value jeff user
+    empty u
+    [ $# -eq 0 ]
+}
+
+test_required_option_not_given() {
+    # -p
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}

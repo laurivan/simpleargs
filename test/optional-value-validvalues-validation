@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" \
+             -s/--sort/--order @validvalues=none,"yes no",size,time,version,name@default @optionalvalue \
+             -u/--user @validvaluescommand='echo -e "mail:1cat\nroot:2" | cut -d: -f1' @optionalvalue @default=root \
+             -o/--operation @validvaluesfile=/tmp/valid-operations @optionalvalue @default=copy \
+             --no-default @validvalues=a,b,c @optionalvalue
+
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_empty() {
+    #
+    #before echo -e "copy\nmove\nremove" > /tmp/valid-operations
+    #after rm /tmp/valid-operations
+    value 0 source_result parse_result process_result
+    value name s sort
+    value root u user
+    value copy o operation
+    empty no_default
+
+    value name s_default sort_default order_default
+    value root u_default user_default
+    value copy o_default operation_default
+    [ $# -eq 0 ]
+}
+
+test_valid() {
+    # --sort=size -umail --ope=remove --no-default=c
+    #before echo -e "copy\nmove\nremove" > /tmp/valid-operations
+    #after rm /tmp/valid-operations
+    value 0 source_result parse_result process_result
+    value size s sort
+    value mail u user
+    value remove o operation
+    value c no_default
+    [ $# -eq 0 ]
+}
+
+test_invalid() {
+    # --sort=color -umail --ope=remove
+    #before echo -e "copy\nmove\nremove" > /tmp/valid-operations
+    #after rm /tmp/valid-operations
+    value 0 source_result parse_result
+    value "${SA_PROCESS_VALIDATION_FAILED}" process_result
+}

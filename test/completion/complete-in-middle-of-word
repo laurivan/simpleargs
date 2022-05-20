@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+
+. ${SIMPLEARGS_PROJECT}/src/simpleargs-completion-test-utils
+set -e
+init_terminal 
+# -----------------------------------------------------------------------------
+type_command 'validationexample --par'
+tab
+# ----------
+assert_terminal_contents <<'EOF'
+>> validationexample --part 
+EOF
+# ----------
+
+type_command 'atti'
+tab
+# ----------
+assert_terminal_contents <<'EOF'
+>> validationexample --part attiny85 
+EOF
+# ----------
+
+move_left 9
+type_command 'pr'
+tab
+# ----------
+assert_terminal_contents <<'EOF'
+>> validationexample --part prominiattiny85 
+EOF
+# ----------
+
+type_command ' '
+# ----------
+assert_terminal_contents <<'EOF'
+>> validationexample --part promini attiny85 
+EOF
+# ----------
+
+move_left 8
+type_command 'a'
+tab
+# ----------
+assert_terminal_contents <<'EOF'
+>> validationexample --part atpromini attiny85 
+EOF
+# ----------
+
+tab
+# ----------
+assert_terminal_contents <<'EOF'
+>> validationexample --part atpromini attiny85 
+EOF
+# ----------
+
+tab
+# ----------
+assert_terminal_contents <<'EOF'
+>> validationexample --part atpromini attiny85 
+atmega328p  attiny85    
+>> validationexample --part atpromini attiny85 
+EOF
+# ----------
+
+type_command 'm'
+tab
+# ----------
+assert_terminal_contents <<'EOF'
+>> validationexample --part atpromini attiny85 
+atmega328p  attiny85    
+>> validationexample --part atmega328ppromini attiny85 
+EOF
+# ----------
+
+move_left 10
+tabtab
+# ----------
+assert_terminal_contents <<'EOF'
+>> validationexample --part atpromini attiny85 
+atmega328p  attiny85    
+>> validationexample --part atmega328ppromini attiny85 
+EOF
+# ----------
+
+tabtab
+# ----------
+assert_terminal_contents <<'EOF'
+>> validationexample --part atpromini attiny85 
+atmega328p  attiny85    
+>> validationexample --part atmega328ppromini attiny85 
+EOF
+# ----------
+

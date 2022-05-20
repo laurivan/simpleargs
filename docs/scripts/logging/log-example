@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+log_align_level=true
+log_date_format=time
+# -------------------------------- simpleargs --------------------------------
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+sa_parse "$0" \
+         --log-level log_level_tmp @default=INFO \
+         @validvalues=OFF,ERROR,WARN,INFO,CONFIG,FINE,FINER,FINEST,ALL \
+         @doc="Logging level, default @{d} (values: @{v})"
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------
+log_level=${log_level_tmp}
+
+log ERROR error
+log WARN warn
+log INFO info
+log CONFIG config
+log FINE fine
+log FINER finer
+log FINEST finest

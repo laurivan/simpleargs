@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+# -------------------------------- simpleargs --------------------------------
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+sa_parse "$0"
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------
+
+log_level=INFO
+myvar="my value"
+othervar="second value"
+log_vars INFO myvar othervar
+
+port=80
+protocol=http
+names=( John Rachel Kyle )
+declare -A wheels=( [car]=4 [bike]=2 [unicycle]=1 )
+
+log_vars INFO "#Connection config" port protocol " " names wheels

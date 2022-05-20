@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" \
+             "<input>" @varname=input1 @validvalues=common,first1,first2,first3 \
+             "@doc=Documentation for input 1" \
+             "<input>" @varname=input2 @validvalues=common,second1,second,second3 \
+             "@doc=Documentation for input 2"
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_parsing() {
+    # common common
+    value 0 source_result parse_result process_result
+    value common input1
+    value common input2
+    [ $# -eq 0 ]
+}
+
+test_processing() {
+    # first1 second1
+    value 0 source_result parse_result process_result
+    value first1 input1
+    value second1 input2
+    [ $# -eq 0 ]
+}
+
+test_usage_instructions() {
+    # first1 second1
+    value 0 source_result parse_result process_result
+    sa_display_usage
+    [ $(sa_display_usage | grep --count "Documentation for input 1") -eq 1 ]
+    [ $(sa_display_usage | grep --count "Documentation for input 2") -eq 1 ]
+}

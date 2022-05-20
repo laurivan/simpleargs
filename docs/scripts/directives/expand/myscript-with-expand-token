@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+sa_expand_token_verbose=( --verbose @doc="Makes script output more verbose." )
+# -------------------------------- simpleargs --------------------------------
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+sa_parse "$0" @expand=verbose \
+
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------

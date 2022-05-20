@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+echo -e "copy\nmove\ndelete" >/tmp/valid-modes
+
+log_level=${log_level:-INFO}
+# -------------------------------- simpleargs --------------------------------
+sa_source="${SIMPLEARGS}"
+. "${sa_source}" || { echo "Error loading '${sa_source}'" >&2; exit 1; }
+sa_parse "$0" \
+         -g/--gname hui,hai,hoi,hep\ hop \
+         -s/--simple-name @validvaluesfile='${HOME}/.valid-simple-names' \
+         -b/--brothers @validvaluesfile='${HOME}/.valid-brothers' @,/multivalue \
+         -u/--user @validvaluescommand='cat /etc/passwd | cut -d: -f1' \
+         "<mode>" @validvaluesfile=/tmp/valid-modes
+
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------
+
+${sa_option_b__brothers[on]} && log_vars_in_array WARN brothers
+log_vars WARN simple_name mode user

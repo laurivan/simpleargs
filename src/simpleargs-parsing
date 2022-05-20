@@ -1,0 +1,585 @@
+#!/usr/bin/env bash
+# simpleargs-parsing
+
+sa_parse_endofoptions() { true; }
+
+sa_parse_argplaceholder() {
+    local token="${1}"
+    if [[ "${token}" = *,* ]]; then
+        # Valid values: low,medium,high
+        log FINER "Interpreting argument placeholder as a comma separated list of valid values"
+        sa_parse_validvalues "${token}"
+    elif [[ "${token}" =~ "*"|"?"|"["|"]" ]]
+    then
+        # Glob: '*.txt'
+        log FINER "Interpreting argument placeholder as a glob (validation)"
+        sa_add_validation "glob" "${token}"
+        # Notice that "not glob" has to be provided using @@!glob '*.txt'
+    elif [[ "${token}" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]
+    then
+        # Variable name: port
+        log FINER "Interpreting argument placeholder as a variable name"
+        sa_parse_varname "${token}"
+    else
+        log ERROR "Option argument token '${token}' could not be interpreted as"
+        log ERROR " - comma separated list of valid argument values"
+        log ERROR " - glob filter containing globbing characters *, ?, [, or ]"
+        log ERROR " - valid variable name (matching [a-zA-Z_][a-zA-Z0-9_]*)"
+        return "${SA_PARSE_INVALID_ARGUMENTS}"
+    fi
+}
+
+sa_parse_varparam() { sa_parse_param "$@"; }
+sa_parse_optionalparam() { sa_parse_param "$@"; }
+sa_parse_varoptionalparam() { sa_parse_param "$@"; }
+sa_parse_param() {
+    local param_string="$1"
+    sa_init_clientry
+    clientry[entrytype]=parameter
+    clientry[fullname]="${param_string}"
+    clientry[on]=false
+
+    # Convert illegal characters (probably mostly spaces and dashes) into underscores)
+    # 'varname' is possibly overwritten at a later stage
+    if [[ "${clientry[fullname]}" = "<"*">" ]]
+    then
+        # <input file>
+        clientry[type]=param
+        clientry[optional]=false
+        clientry[varargs]=false
+        clientry[varname]=$(sed -r 's/[^a-zA-Z0-9]/_/g' <<<"${clientry[fullname]:1:-1}")
+    elif [[ "${clientry[fullname]}" = "[<"*">]" ]]
+    then
+        # [<log file>]
+        clientry[type]=optionalparam
+        clientry[optional]=true
+        clientry[varargs]=false
+        clientry[varname]=$(sed -r 's/[^a-zA-Z0-9]/_/g' <<<"${clientry[fullname]:2:-2}")
+    elif [[ "${clientry[fullname]}" = "<"*">..." ]]
+    then
+        # <input file>...
+        clientry[type]=varparam
+        clientry[optional]=false
+        clientry[varargs]=true
+        clientry[varname]=$(sed -r 's/[^a-zA-Z0-9]/_/g' <<<"${clientry[fullname]:1:-4}")
+    elif [[ "${clientry[fullname]}" = "[<"*">]..." ]]
+    then
+        # [<input file>]...
+        clientry[type]=varoptionalparam
+        clientry[optional]=true
+        clientry[varargs]=true
+        clientry[varname]=$(sed -r 's/[^a-zA-Z0-9]/_/g' <<<"${clientry[fullname]:2:-5}")
+    fi
+
+    clientry[id]="_${clientry[varname]}_${sa_param_counter}"
+    clientry[validationarraynames]=""
+    (( sa_param_counter++ ))
+    clientry[docarray]="sa_docs${clientry[id]}"
+    sa_params+=("${clientry[fullname]}")
+}
+
+sa_parse_option() {
+    plus_indent
+    local retcode=0
+
+    local flag_def_string="$token"
+    log FINER "Parsing option: '${flag_def_string}'"
+
+    sa_init_clientry
+    clientry[fullname]="${flag_def_string}" # e.g. "-p/--port"
+    clientry[on]=false # Set to 'true' if given as an option.
+    clientry[entrytype]=option
+    # Options start as 'novalue' type: subsequent tokens can change the type
+    clientry[type]=novalue
+    clientry[getopt_type]=""
+    clientry[rep]=0 # How many times the option is given (repetition).
+    clientry[flags]="${flag_def_string//// }" # Replace every '/' with ' ' --> e.g. "-p --port"
+    # Remove slashes, convert dashes to underscores: e.g. "-p/--port" --> "_p__port"
+    clientry[id]="$(sed -e 's/-/_/g' -e 's|/||g' <<< "$flag_def_string")"
+    clientry[mapname]="sa_option${clientry[id]}"
+    clientry[validationarraynames]=""
+    clientry[docarray]="sa_docs${clientry[id]}"
+
+    log_vars_in_map FINER clientry fullname id flags mapname validationarray
+    sa_record_option_definition "${clientry[fullname]}" || return
+
+    minus_indent
+}
+
+# Records the existence of the option to global data models. The data models
+# can be used to...
+# - ...check that options are not define multiple times
+# - ...convert between identifiers, e.g. "-b/--baudrate" --> "_b__baudrate"
+sa_record_option_definition() {
+    local retcode=0
+    local fullname="$1"
+    local mapname=${clientry[mapname]}
+
+    local flag
+    for flag in ${clientry[flags]}
+    do
+        # Validate and record flags
+        #               -p                  --ssh-port-2
+        if grep -qE -e '^-[a-zA-Z0-9]$' -e '^--[a-zA-Z0-9-]{2,}$' <<< "${flag}"
+        then
+            if sa_array_contains sa_flags "$flag"
+            then
+                log ERROR "${fullname}: Option already defined: '$flag'"
+                if [ "${flag}" = "-h" ] || [ "${flag}" = "--help" ]
+                then
+                    # Since the help option is defined within the library provide
+                    # a more reasonable error message if the user accidentally
+                    # defines their own option with the same flag(s).
+                    log ERROR "To disable the default help option (-h/--help) use 'sa_default_tokens=()'"
+                fi
+                retcode=2
+            else
+                sa_flags+=("$flag")
+                sa_fullnames+=(["$flag"]="$fullname")
+                sa_mapnames+=(["$flag"]="$mapname")
+            fi
+        else
+            log ERROR "Invalid flag definition: '$flag'"
+            retcode=2
+        fi
+    done
+
+    # If options has more than one flag (usually two) add mapname mapping
+    # for fullname as well (since it differs from other flag names).
+    if [ "${#cliflags[@]}" -gt 1 ]
+    then
+        sa_mapnames+=(["$fullname"]="$mapname")
+    fi
+
+    # Record this option in global data structures
+    sa_options+=("$fullname")
+    sa_optionmaps+=("$mapname")
+    return $retcode
+}
+
+sa_add_docs() {
+    local doc_entry
+    for doc_entry in "$@"
+    do
+        log FINER "Adding doc entry: '${doc_entry}'"
+        docs+=("${doc_entry}")
+    done
+}
+
+# 1.2.2022 It is evident that the current implementation allows specifying
+# many validations in one token: @@file,exists,readable. Or with a different
+# separator character: @@:/file:exists:readable. Furthermore, validation
+# negation can be done using modifier "negate" in addition to the more
+# natural '!" mark. So, @@negate/exists is the same as @@!exists
+#
+# However, I've forgotten these features and haven't missed them. Specifying
+# @@file @@readable OR @@!file have been perfectly adequate. So, should
+# the implementation be simplified as well? Not necessarily but I think
+# these features shouldn't at least be documented.
+#
+# The current state is more than satisfactory in a sense that the usage
+# of the validation directives is simple and effective. Note that using
+# separate validation tokens isn't even longer to write. The two inputs
+# shown below have the same validation rules.
+#     "<input1>" @@:/exists:file:!glob "*.txt"
+#     "<input2>" @@exists @@file @@!glob "*.txt"
+sa_parse_validation() {
+    plus_indent
+
+    # @@:/negate/file:glob  $1
+    #   :/negate/file:glob  $token
+    #            file:glob  $token_value
+    #   :/negate/           $modifier_string
+    local token=${1:2}
+    local token_value=${token##*/}
+    local modifier_string=${token%/${value}}
+    IFS="/" read -ra sa_directive_modifiers <<< "${modifier_string}"
+
+    log_vars FINER "#Parsing validation token" token token_value modifier_string sa_directive_modifiers
+
+    local separator=, # Default separator
+    for modifier in "${sa_directive_modifiers[@]}"
+    do
+        if [ "${#modifier}" -eq 1 ]
+        then
+            separator="${modifier}"
+            log "FINEST" "Using custom separator: '${separator}'"
+        fi
+    done
+
+    local validation_entries
+    IFS="${separator}" read -ra validation_entries <<<"${token_value}"
+    log_vars FINER validation_entries
+    local validation_entry  i=0
+    for validation_entry in "${validation_entries[@]}"
+    do
+        if [ ${i} -lt $(( ${#validation_entries[*]} - 1 )) ]
+        then
+            # First entries are added immediately. Note that sa_add_validation
+            # reads also values from sa_directive_modifiers array.
+            sa_add_validation ${validation_entry}
+        else
+            # The last entry is left pending for further arguments
+            # (added by sa_finalize_validation_command (called by sa_parse)
+            read -ra sa_validation_command_words <<< "${validation_entry}"
+        fi
+        ((i++))
+    done
+    minus_indent
+}
+
+sa_parse_validationargument() {
+    sa_validation_command_words+=( "${token}" )
+}
+
+# Takes one or more parameters -> one validation rule
+# Note that this function takes "input parameters" also as global variables.
+# That is, sa_directive_modifiers array is checked for e.g. value "negate"
+# TODO: check that the validation command exists
+sa_add_validation() {
+    plus_indent
+    local negate=$(sa_array_contains sa_directive_modifiers "negate" && echo true || echo false)
+    log FINER "$(sa_prefix="Adding validation entry: " sa_delim=" " sa_enclose="'" sa_concatenate "$@")"
+    declare sa_validation_command=( "$@" )
+    ${negate} && log FINER "Validation command is negated (using directive modifier)"
+
+    # Check for negate marker ('!') since the marker has to be removed if there.
+    if [ "${sa_validation_command[0]:0:1}" = "!" ]
+    then
+        log FINER "Validation command is negated (using '!' character)"
+        negate=true
+        sa_validation_command[0]="${sa_validation_command[0]:1}"
+    fi
+
+    local validation_array_name=sa_validation${clientry[id]}_${sa_validation_command_index}
+    sa_array_copy sa_validation_command ${validation_array_name}
+    (( sa_validation_command_index++ ))
+    sa_validation_command_modifiers[${validation_array_name}_negate]=${negate}
+    clientry[validationarraynames]="${clientry[validationarraynames]} ${validation_array_name}"
+    minus_indent
+}
+
+sa_parse_directive() {
+    plus_indent
+
+    local modifier
+
+    # @validvalues:=local:dev:prod  $1
+    #  validvalues:=local:dev:prod  token
+    #  validvalues:                 directive_spec
+    #  validvalues                  directive_name
+    #             :                 modifier
+    #               local:dev:prod  directive_value
+
+    local token="${1:1}" # @multivalue: @default%=one,1%two,2 @validvalues+=A,B+C,D
+    local directive_spec=${token%%=*} # Remove the first '=' character and everything after
+    # This one is the tricky one
+    case "${directive_spec:0:-1}" in
+        multivalue|validvalues|default)
+            modifier="${directive_spec: -1:1}"
+            directive_name="${directive_spec:0:-1}"
+            ;;
+        *)
+            modifier=""
+            directive_name="${directive_spec}"
+            ;;
+    esac
+    local directive_value=
+    [[ ${token} = *=* ]] && directive_value="${token#*=}"
+    log_vars FINER token directive_spec directive_name directive_value modifier
+    # TODO: test what happens with @validvalues==a=b=c (hmm, there's only one valid value: '=a=b=c')
+    # TODO: test what happens with @validvalues::=a:b:c (invalid directive @validvalues:)
+
+    case "${directive_name}" in
+        afterprocessing|allowrepeat|multivalue|onvalue|offvalue|optionalvalue|required)
+            if [ "${clientry[entrytype]}" = "parameter" ]
+            then
+                log ERROR "${clientry[fullname]}: @${directive_name} is only applicable for options"
+                return "${SA_PARSE_INVALID_ARGUMENTS}"
+            fi
+            ;;
+    esac
+
+    case "$directive_name" in
+        afterprocessing)
+            # TODO: Not yet implemented for parameters (will it ever be implemented?)
+             clientry[afterprocessing]="${directive_value:-true}"
+            ;;
+        allowempty)
+            clientry[allowempty]=true
+            ;;
+        allowrepeat)
+             clientry[allowrepeat]=true
+            ;;
+        default)
+            clientry[default]="$directive_value"
+            if [ -z "${clientry[default]}" ]
+            then
+                log ERROR "${clientry[fullname]}: default value cannot be null (empty)"
+                return "${SA_PARSE_INVALID_ARGUMENTS}"
+            fi
+
+            # TODO: add "multidefault"
+            if [ -n "${modifier}" ]
+            then
+                :
+                # Check that this is either @multivalue option, varargs or optional varargs parameter
+                # clientry[defaultseparator]="${modifier}"
+                # TODO: add handling to default assignment
+            fi
+            ;;
+        doc)
+            sa_add_docs "$directive_value"
+            ;;
+        multivalue)
+            clientry[multivalue]=true
+            if [ -n "${modifier}" ]
+            then
+                clientry[list]=true
+                clientry[listseparator]="${modifier}"
+                log FINEST "Recording multivalue with separator '${clientry[listseparator]}'"
+            fi
+            ;;
+        offvalue)
+            clientry[offvalue]="$directive_value"
+            clientry[explicitonoffvalues]=true
+            ;;
+        onvalue)
+            clientry[onvalue]="$directive_value"
+            clientry[explicitonoffvalues]=true
+            ;;
+        optionalvalue)
+            clientry[optionalvalue]=true
+            ;;
+        required)
+            clientry[required]=true
+            ;;
+        validvaluesfile)
+            clientry[validvaluesfile]="${directive_value}"
+            ;;
+        validvaluescommand)
+            clientry[validvaluescommand]="${directive_value}"
+            ;;
+        validvalues)
+            local separator=, # Default separator
+            [ -n "${modifier}" ] && separator="${modifier}"
+            # Handle parsing in the subfunction
+            sa_parse_validvalues "$separator" "$directive_value"
+            ;;
+        varname)
+            sa_parse_varname "$directive_value" false || return
+            ;;
+        *)
+            log ERROR "Unknown directive: '@${directive_name}'"
+            log ERROR "Modifiers placed after the directive name are allowed only for"
+            log ERROR "@multivalue and @validvalues (e.g. @validvalues:=a,b:c,d:e,f)"
+            return "${SA_PARSE_INVALID_ARGUMENTS}"
+            ;;
+    esac
+    minus_indent
+}
+
+# 1.2.2022 This is the one that we need to simplify. The syntax for directives
+# should be
+#   @<name>[[,][=<value>]]
+# where comma ',' is a placeholder for any character (other than '=') to be used
+# as a separator character for @validvalues, @multivalue and @default (not yet
+# implemented).
+sa_parse_directive_old() {
+    plus_indent
+
+    local modifier
+
+    # @/@/multivalue=hello  $1
+    #  /@/multivalue=hello  token
+    #  /@/multivalue        directive_spec
+    #     multivalue        directive_name
+    #                hello  directive_value
+    #   @                   modifier_string
+
+    local token="${1:1}" # @:/multivalue @jou/default=mydefault @hei/,/myname=myvalue
+    local directive_spec=${token%%=*} # Modifiers and name
+    local directive_name=${directive_spec##*/}
+    local directive_value=
+    [[ ${token} = *=* ]] && directive_value="${token#*=}"
+    local modifier_string=
+    [[ ${directive_spec} = */* ]] && modifier_string=${directive_spec%/*}
+    [ "${modifier_string:0:1}" = "/" ] && modifier_string="${modifier_string:1}"
+    IFS=/ read -r -a modifiers <<< "${modifier_string}"
+    local one_char_modifier=""
+
+    # Make modifiers available globally (for validation command finalization)
+    declare -ag sa_directive_modifiers=( "${modifiers[@]}" )
+    for modifier in "${sa_directive_modifiers[@]}"
+    do
+        if [ -z "${modifier}" ]
+        then
+            log ERROR "${clientry[fullname]} '${token}': modifier cannot be empty"
+            return "${SA_PARSE_INVALID_ARGUMENTS}"
+        elif [ ${#modifier} -eq 1 ]
+        then
+            log FINER "Recorded one character modifier: '${one_char_modifier}'"
+            one_char_modifier="${modifier}"
+        fi
+    done
+    unset modifier
+    log_vars FINER token directive_spec directive_name directive_value modifier_string sa_directive_modifiers one_char_modifier
+
+    case "$directive_name" in
+        afterprocessing)
+            clientry[afterprocessing]="${directive_value:-true}"
+            if [ "${clientry[entrytype]}" = "parameter" ]
+            then
+                # TODO: not yet implemented for parameters
+                log ERROR "${clientry[fullname]}: @${directive_name} is only applicable for options"
+                return "${SA_PARSE_INVALID_ARGUMENTS}"
+            fi
+            ;;
+        allowempty)
+            clientry[allowempty]=true
+            ;;
+        allowrepeat)
+            clientry[allowrepeat]=true
+            ;;
+        default)
+            clientry[default]="$directive_value"
+            if [ -z "${clientry[default]}" ]
+            then
+                log ERROR "${clientry[fullname]}: default value cannot be null (empty)"
+                return "${SA_PARSE_INVALID_ARGUMENTS}"
+            fi
+            ;;
+        doc)
+            sa_add_docs "$directive_value"
+            ;;
+        multivalue)
+            if [ "${clientry[entrytype]}" = "parameter" ]
+            then
+                log ERROR "${clientry[fullname]}: @${directive_name} is only applicable for options"
+                return "${SA_PARSE_INVALID_ARGUMENTS}"
+            fi
+
+            clientry[multivalue]=true
+            if [ -n "${one_char_modifier}" ]
+            then
+                clientry[list]=true
+                clientry[listseparator]="${one_char_modifier}"
+                log FINEST "Recording multivalue with separator '${clientry[listseparator]}'"
+            fi
+            ;;
+        offvalue)
+            clientry[offvalue]="$directive_value"
+            clientry[explicitonoffvalues]=true
+            ;;
+        onvalue)
+            clientry[onvalue]="$directive_value"
+            clientry[explicitonoffvalues]=true
+            ;;
+        optionalvalue)
+            clientry[optionalvalue]=true
+            ;;
+        required)
+            if [ "${clientry[entrytype]}" = "parameter" ]
+            then
+                log ERROR "${clientry[fullname]}: @${directive_name} is only applicable for options"
+                return "${SA_PARSE_INVALID_ARGUMENTS}"
+            fi
+
+            clientry[required]=true
+            ;;
+        validvaluesfile)
+            clientry[validvaluesfile]="${directive_value}"
+            ;;
+        validvaluescommand)
+            clientry[validvaluescommand]="${directive_value}"
+            ;;
+        validvalues)
+            local separator=,
+            [ -n "${one_char_modifier}" ] && separator="${one_char_modifier}"
+            # Handle parsing in the subfunction
+            sa_parse_validvalues "$separator" "$directive_value"
+            ;;
+        varname)
+            sa_parse_varname "$directive_value" false || return
+            ;;
+        *)
+            log ERROR "Unknown directive: '@${directive_name}'"
+            log ERROR "For modifiers use e.g. @:/multivalue"
+            return "${SA_PARSE_INVALID_ARGUMENTS}"
+            ;;
+    esac
+    minus_indent
+}
+
+# -n/--name jack,john,james
+# -n/--name name @valid=jack,john,james
+# -n/--name name @valid%=jack%john%james
+# -n/--name name @valid=@file:/path/to/file
+# -n/--name name @valid=@command:generatenames
+# -n/--name name log.txt,log.out,debug.out [file,exists]
+
+# Usage
+# > sa_parse_validvalues "<comma separated list>"
+# OR
+# > sa_parse_validvalues <delimiter> <delimiter separated list>"
+sa_parse_validvalues() {
+    local delimiter=,
+    if [ $# -eq 2 ]
+    then
+        delimiter="$1"; shift
+    fi
+    values="$1"
+
+    local arrayname=sa_valid_values${clientry[id]}
+    clientry[validvaluesarray]=$arrayname
+
+    log FINER "Creating valid values array '$arrayname'; delimiter: '$delimiter', values: '$values'"
+    local tmparray
+    IFS="$delimiter" read -ra tmparray <<<"$values"
+    sa_array_copy tmparray $arrayname
+    declare -n array=$arrayname
+
+    local default_token="@default"
+    local index value
+    for index in "${!array[@]}"
+    do
+        value="${array[$index]}"
+        if [[ "$value" = *"${default_token}" ]]
+        then
+            array[$index]="${value:0:-${#default_token}}"
+            clientry[default]="${array[$index]}"
+        fi
+    done
+}
+
+# Implicit variable name: sa_parse "$0" --port http_port
+# Explicit variable name: sa_parse "$0" --port ... @varname=http_port
+# usage: sa_parse_varname <varname> [false]
+sa_parse_varname() {
+    local varname="$1"
+    local implicit="${2:-true}"
+    local placeholder_varname="arg"
+
+    if [ "${clientry[entrytype]}" = option ]
+    then
+        if ${implicit}
+        then
+            clientry[type]=value; clientry[getopt_type]=":"
+            if [ "${varname}" = "${placeholder_varname}" ]
+            then
+                log FINER "Not setting implicit variable name '${placeholder_varname}' (interpreted as a mere placeholder)"
+            else
+                log FINER "Setting implicit variable name: '${varname}'"
+                clientry[implicit_varname]="${varname}"
+            fi
+        else
+            log FINER "Setting explicit variable name: '${varname}'"
+            clientry[explicit_varname]="${varname}"
+        fi
+    else # [ "${clientry[entrytype]}" = parameter ]
+        log FINER "Setting parameter variable name: '${varname}'"
+        clientry[varname]="${varname}"
+    fi
+
+    return 0
+}

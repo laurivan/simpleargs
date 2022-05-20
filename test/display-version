@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+
+log_level=ERROR
+sa_default_tokens=( @expand=version )
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0"
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+test_minimal() {
+    # --version
+    #before export sa_script_version=1.2
+    value 0 source_result parse_result process_result
+    [ $# -eq 0 ]
+    diff ${sa_test_stdout} - <<EOF
+display-version 1.2
+EOF
+}
+
+test_build() {
+    # --version
+    #before export sa_script_version=1.2
+    #before export sa_script_build=b129
+
+    value 0 source_result parse_result process_result
+    [ $# -eq 0 ]
+    diff ${sa_test_stdout} - <<EOF
+display-version 1.2 (b129)
+EOF
+}
+
+test_long_name() {
+    # --version
+    #before export sa_script_version=1.2
+    #before export sa_script_build=b129
+    #before export sa_script_long_name="dv (ABC dv)"
+    value 0 source_result parse_result process_result
+    [ $# -eq 0 ]
+    diff ${sa_test_stdout} - <<EOF
+dv (ABC dv) 1.2 (b129)
+EOF
+}
+
+test_no_version_defined() {
+    # --version
+    value 0 source_result parse_result
+    value ${SA_PROCESS_HOOK_FAILURE} process_result
+    grep --silent "No version set. Set script version" ${sa_test_stdout}
+}

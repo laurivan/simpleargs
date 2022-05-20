@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+
+######### Minimal example header #########
+. ../target/simpleargs-bundle; source_result=$?
+
+[ "$source_result" -eq 0 ] &&
+    sa_parse "$0" "<output>" \
+             "<input>..." @multivalue,
+parse_result=$?
+[ "$parse_result" -eq 0 ] &&
+    sa_process "$@"; process_result=$?
+[ "$process_result" -eq 0 ] &&
+    eval "set -- ${sa_args}"
+###########################################
+
+#skipfile
+# Maybe this is implemented in the future so that
+# the following is possible:
+#   > multivalue-parameter output.txt input1.txt input2.txt,input3.txt
+# Note 1.2.2022: I doubt that this will ever be implemented.
+test_missing_input() {
+    # output.txt
+    value 0 source_result parse_result
+    value "${SA_PROCESS_INVALID_ARGUMENTS}" process_result
+}
+
+test_one_input() {
+    # output.txt input1.txt
+    value 0 source_result parse_result process_result
+    value output.txt output
+    arrayvalue input input1.txt
+}
+
+test_two_inputs() {
+    # output.txt input1.txt,input2.txt
+    value 0 source_result parse_result process_result
+    value output.txt output
+    arrayvalue input input1.txt input2.txt
+}
+
+test_pos_params() {
+    # output.txt input1.txt input2.txt,input3.txt
+    value 0 source_result parse_result process_result
+    value output.txt output
+    arrayvalue input input1.txt input2.txt input3.txt
+    [ $# -eq 0 ]
+}

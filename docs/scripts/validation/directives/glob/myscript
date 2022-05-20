@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+# -------------------------------- simpleargs --------------------------------
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+sa_parse "$0" \
+         "<text file>" @@glob "*.txt" \
+         "<image file>" @@glob "*.@(png|jpg|gif|tiff)" \
+         "<uppercase start>" @@glob "[A-Z]*" \
+         "<no z end>" @@!glob "*z"
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------
+# ...
+echo "All parameters OK"
