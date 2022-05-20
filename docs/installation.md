@@ -53,26 +53,23 @@ export MANPATH="/usr/local/opt/findutils/libexec/gnuman:${MANPATH}"
 </details>
 
 ### Installing
-Download the latest simpleargs bundle in your home directory and install
-simpleargs by issuing the following commands as an ordinary user:
+Download the [latest release](https://github.com/laurivan/simpleargs/releases/latest)
+(named e.g. `simpleargs-vX.X.X`) and install by sourcing
+the file and running the installation function as an ordinary user:
 ```
-# simpleargs bundle downloaded into ~/simpleargs-bundle
-. ~/simpleargs-bundle
-sa-install-local ~/simpleargs-bundle
-
-# For system wide installation, run as root:
-# sa-install-global ~/simpleargs-bundle
+. simpleargs-v0.1.0
+sa-install-local simpleargs-v0.1.0
 ```
 Below you can see an example of the expected output.
 ```
 Installing simpleargs...
 Installation complete
-         User home directory: /home/eles
-                      Bundle: /home/eles/.simpleargs.d/simpleargs-bundle
-  Utility functions + config: /home/eles/.simpleargs.d/simpleargs.rc
-          Completion library: /home/eles/.simpleargs.d/simpleargs-completion
-          Configuration file: /home/eles/.simpleargs.d/simpleargs.conf
-       Bootstrap appended to: /home/eles/.bashrc
+         User home directory: /home/john
+                      Bundle: /home/john/.simpleargs.d/simpleargs-bundle
+  Utility functions + config: /home/john/.simpleargs.d/simpleargs.rc
+          Completion library: /home/john/.simpleargs.d/simpleargs-completion
+          Configuration file: /home/john/.simpleargs.d/simpleargs.conf
+       Bootstrap appended to: /home/john/.bashrc
 ```
 
 As indicated by the output the installation performed two steps

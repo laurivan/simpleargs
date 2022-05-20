@@ -1,4 +1,4 @@
-# Simpleargs
+# simpleargs - bash argument parser
 
   - [Installation](docs/installation.md)
   - [Getting Started](docs/getting-started.md)
