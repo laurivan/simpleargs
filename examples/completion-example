@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 
-
 log_level=${log_level:-INFO}
 # -------------------------------- simpleargs --------------------------------
 . "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }

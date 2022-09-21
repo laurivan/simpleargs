@@ -348,18 +348,18 @@ _simpleargs_general_completion() {
                         if [ "${option[type]}" = "novalue" ]
                         then
                             #SA_COV
-                            _sa_tty_echo INFO "$${ind}long option (novalue): '${flag}'"
+                            _sa_tty_echo INFO "${ind}long option (novalue): '${flag}'"
                             expecting=option/param
                         elif [ "${option[type]}" = "value" ]
                         then
                             #SA_COV
-                            _sa_tty_echo INFO "$${ind}long option (next: value/equals): '${flag}'"
+                            _sa_tty_echo INFO "${ind}long option (next: value/equals): '${flag}'"
                             current_flag="${flag}"
                             expecting=value/equals
                         elif [ "${option[type]}" = "optionalvalue" ]
                         then
                             #SA_COV
-                            _sa_tty_echo INFO "$${ind}long option (optional value): '${token}'"
+                            _sa_tty_echo INFO "${ind}long option (optional value): '${token}'"
                             current_flag="${flag}"
                             expecting=option/param/equals
                         elif [ "${option[type]}" = "multivalue" ]
@@ -368,11 +368,11 @@ _simpleargs_general_completion() {
                             if [ "${option[list]}" = "true" ]
                             then
                                 #SA_COV
-                                _sa_tty_echo INFO "$${ind}long option (next: list/equals), (list separator: '${option[listseparator]}'): '${flag}'"
+                                _sa_tty_echo INFO "${ind}long option (next: list/equals), (list separator: '${option[listseparator]}'): '${flag}'"
                                 list_separator="${option[listseparator]}"
                             else
                                 #SA_COV
-                                _sa_tty_echo INFO "$${ind}long option (next: (multi)value)): '${flag}'"
+                                _sa_tty_echo INFO "${ind}long option (next: (multi)value)): '${flag}'"
                                 list_separator=""
                             fi
                             current_flag="${flag}"
