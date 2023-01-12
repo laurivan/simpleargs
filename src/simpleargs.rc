@@ -11,7 +11,7 @@ sa-requirements() {
         cmd_status="OK"
         case "${cmd}" in
             bash)
-                [ "${BASHVERSINFO}" -eq 5 ] || cmd_status="FAIL (Bash version is not 5)"
+                [ "${BASH_VERSINFO[0]}" -eq 5 ] || cmd_status="FAIL (Bash version is not 5)"
                 ;;
             getopt)
                 if type "${cmd}" >/dev/null 2>&1
