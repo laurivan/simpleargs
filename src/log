@@ -145,6 +145,9 @@ finest() { log FINEST "$@"; }
 # TODO: correct indentation when printing arrays and maps
 # TODO: prefix the variables with __sa_ (to avoid clashes)
 # TODO: reset alignment after empty and separator lines?
+# TODO: proper hangling of namerefs: https://stackoverflow.com/questions/14525296/how-do-i-check-if-variable-is-an-array
+#  (see answer by Marco)
+# TODO: log_vars_in_map and log_vars_in_array are basically the same -> refactor
 log_vars() {
     local _msg_log_level="$1"; shift
     log_enabled "$_msg_log_level" || return 0
@@ -166,10 +169,10 @@ log_vars() {
                 log "$_msg_log_level" "$(printf "%${_longest_name_length}s\n" "$_name" | sed -r 's/#/ /')"
             ;;
             *)
-                if declare -p ${_name} 2>/dev/null | grep -q '^declare \-a'
+                if declare -p ${_name} 2>/dev/null | grep -q '^declare -a'
                 then
                     log_vars_in_array "$_msg_log_level" "${_name}"
-                elif declare -p ${_name} 2>/dev/null | grep -q '^declare \-A'
+                elif declare -p ${_name} 2>/dev/null | grep -q '^declare -A'
                 then
                     log_vars_in_map "$_msg_log_level" "${_name}"
                 else
@@ -187,14 +190,13 @@ log_vars() {
     done
 }
 
-# TODO: log_vars_in_map and log_vars_in_array are basically the same
 # log_vars_in_map <log level> <map name> [<key>...]
 log_vars_in_map() {
     local _msg_log_level="$1"; shift
     log_enabled "$_msg_log_level" || return 0
     local _mapname="$1"; shift
 
-    declare -p $_mapname 2> /dev/null | grep -q '^declare \-A' || { echo "No such map: '$_mapname'"; return 1; }
+    declare -p $_mapname 2> /dev/null | grep -q '^declare -A' || { echo "No such map: '$_mapname'"; return 1; }
     declare -n _map=$_mapname
     [ -z "$1" ] && set -- "${!_map[@]}"
 
@@ -221,7 +223,7 @@ log_vars_in_array() {
     log_enabled "$_msg_log_level" || return 0
     local _arrayname="$1"; shift
 
-    declare -p $_arrayname 2> /dev/null | grep -q '^declare \-a' || { echo "No such array: '$_arrayname'"; return 1; }
+    declare -p $_arrayname 2> /dev/null | grep -q '^declare -a' || { echo "No such array: '$_arrayname'"; return 1; }
     declare -n _array=$_arrayname
     [ -z "$1" ] && set -- "${!_array[@]}"
 

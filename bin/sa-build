@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 
+# Usage:
+# cd ${SIMPLEARGS_PROJECT}; bin/sa-build
+# . ${SIMPLEARGS_PROJECT}/target/simpleargs-bundle
+# sa-install-local ${SIMPLEARGS_PROJECT}/target/simpleargs-bundle
+
 sa-print-functions-in-file() {
     local file="$1"; shift
     [ -f "${file}" ] || { echo "No such file: '${file}'"; return 1; }
