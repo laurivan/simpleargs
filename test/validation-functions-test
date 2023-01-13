@@ -354,26 +354,6 @@ test_sa_validate_executable() {
     sa_validate_executable || result=$?; [ "${result}" -eq "${SA_INCORRECT_USE}" ]
 }
 
-test_sa_validate_modified() {
-    #
-    cd /tmp/sa-validation
-    echo "line" > newfile
-    sa_validate_modified newfile
-    sleep  1.1 # Wait longer than timestamp resolution
-    cat newfile >/dev/null
-    sa_validate_modified newfile && false
-
-    sa_gen_normal_error_msg=true sa_validate_executable "filename" || status=$?
-    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
-    value "No such file or not executable: 'filename'" sa_error_msg
-
-    sa_gen_negated_error_msg=true sa_validate_executable "filename" || status=$?
-    [ "${status}" -eq "${SA_GENERATED_ERROR_MSG_STATUS}" ]
-    value "Executable file exists: 'filename'" sa_error_msg
-
-    sa_validate_modified || result=$?; [ "${result}" -eq "${SA_INCORRECT_USE}" ]
-}
-
 test_sa_validate_glob() {
     #
     sa_validate_glob "*.mp4" /tmp/videos/party.mp4

@@ -24,6 +24,8 @@ flag_clear_cache=false
 [ -n "${options[--clear-cache]}" ] && flag_clear_cache=true
 output_to_screen=false
 [ -n "${options[--output-to-screen]}" ] && output_to_screen=true
+trace=false
+[ -n "${options[--trace]}" ] && trace=true
 
 skipped_tests=()
 failed_tests=()
@@ -108,6 +110,7 @@ do
                 echo "SA_SKIP_TEST_EXIT_CODE=${SA_SKIP_TEST_EXIT_CODE}"
                 echo "# Test failure -> 'errortrap' assigns exit_code=1 (simpleargs-test-utils)"
                 echo 'exit_code=0'
+                ${trace} && echo 'set -x'
                 echo "${test_case_name}"' "$@"'
                 echo 'exit "${exit_code}"'
             } >> "${instrumented_test_file}"

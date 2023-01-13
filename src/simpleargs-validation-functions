@@ -159,19 +159,6 @@ sa_validate_executable() {
     [ -x "$1" ]
 }
 
-sa_validate_modified() {
-    if [ $# -ne 1 ]
-    then
-        echo "${FUNCNAME}: incorrect number ($#) of parameters (should be 1)" >&2
-        return "${SA_INCORRECT_USE}"
-    fi
-
-    local filename="$1"
-    [ "${sa_gen_normal_error_msg}" = "true" ] && { sa_error_msg="File not modified since last read: '${filename}'"; return "${SA_GENERATED_ERROR_MSG_STATUS}"; }
-    [ "${sa_gen_negated_error_msg}" = "true" ] && { sa_error_msg="File modified since last read: '${filename}'"; return "${SA_GENERATED_ERROR_MSG_STATUS}"; }
-    [ -N "$1" ]
-}
-
 sa_validate_int() {
     local usage="Usage: ${FUNCNAME} [<bounds>] <int> (got: $*)
  - range: [<min>]..[<max>], lower and upper bounds (inclusive)

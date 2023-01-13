@@ -17,8 +17,6 @@
       - [@@readable](#readable)
       - [@@writable](#writable)
       - [@@executable](#executable)
-      - [@@modified](#modified)
-      - [@@filetype](#filetype)
       - [@@int](#int)
       - [@@float](#float)
     - [Writing a custom validation directive](#writing-a-custom-validation-directive)
@@ -237,15 +235,13 @@ Bash [test](http://wiki.bash-hackers.org/commands/classictest) based validations
 * [@@readable](#readable)
 * [@@writable](#writable)
 * [@@executable](#executable)
-* [@@modified](#modified)
 
 Other:
 
-* [@@filetype](#filetype)
 * [@@int](#int)
 * [@@float](#float)
 
-#### @@grep
+### @@grep
 **Description**  
 Matches the value against a grep regular expression.
 
@@ -278,7 +274,7 @@ Hello, James!
 
 </details>
 
-#### @@egrep
+### @@egrep
 **Description**  
 Matches the value against a grep _extended_ regular expression.
 
@@ -311,7 +307,7 @@ Hello, Jerry!
 
 </details>
 
-#### @@glob
+### @@glob
 **Description**  
 Matches the value against a Bash extended glob.
 Since the primary purpose of this directive is to check filenames
@@ -360,7 +356,7 @@ Usage: myscript [OPTION]... <text file> <image file> <uppercase start>
 
 </details>
 
-#### @@exists
+### @@exists
 **Description**  
 Checks that a file exists using Bash test operator: `[ -e "${value}" ]` (see `help test` for details)
 
@@ -394,7 +390,7 @@ $ myscript readable.txt output.txt
 
 </details>
 
-#### @@file
+### @@file
 **Description**  
 Checks that a _regular_ file exists using Bash test operator: `[ -f "${value}" ]` (see `help test` for details)
 
@@ -428,7 +424,7 @@ $ myscript readable.txt
 
 </details>
 
-#### @@dir
+### @@dir
 **Description**  
 Checks that a directory exists using Bash test operator: `[ -d "${value}" ]` (see `help test` for details)
 
@@ -462,7 +458,7 @@ $ myscript directory
 
 </details>
 
-#### @@notempty
+### @@notempty
 **Description**  
 Checks that a file exists and is not empty using Bash test operator: `[ -s "${value}" ]` (see `help test` for details).
 Note that you cannot check for existing and non-empty _directories_ with this.
@@ -497,7 +493,7 @@ $ myscript readable.txt
 
 </details>
 
-#### @@readable
+### @@readable
 **Description**  
 Checks that a file (or directory) is readable using Bash test operator: `[ -r "${value}" ]` (see `help test` for details)
 
@@ -528,7 +524,7 @@ $ myscript readable.txt
 
 </details>
 
-#### @@writable
+### @@writable
 **Description**  
 Checks that a file (or directory) is writable using Bash test operator: `[ -w "${value}" ]` (see `help test` for details)
 
@@ -560,7 +556,7 @@ $ myscript writable.txt
 
 </details>
 
-#### @@executable
+### @@executable
 **Description**  
 Checks that a file is executable using Bash test operator: `[ -x "${value}" ]` (see `help test` for details)
 
@@ -594,100 +590,7 @@ $ myscript executable.txt
 
 </details>
 
-#### @@modified
-**Description**  
-Checks that a file has been modified since it was last read using Bash test operator: `[ -N "${value}" ]` (see `help test` for details)
-
-**Arguments**  
-No arguments.
-
-<details>
-  <summary>Example</summary>
-
-<!--@eval filter-simpleargs-script --example $SIMPLEARGS_DOC_SCRIPTS/validation/directives/modified/myscript -->
-```
-sa_parse "$0" "<input file>" @@modified
-```
-<!--@eval shell-session-simulator --exec-dir $SIMPLEARGS_DOC_RESOURCES/file-tests --path $SIMPLEARGS_DOC_SCRIPTS/validation/directives/modified -c 'ls -l writable.txt' -c 'touch -a writable.txt' -c 'myscript writable.txt' -c 'touch -m writable.txt' -c 'myscript writable.txt' -->
-```
-$ ls -l writable.txt
--rw-r--r-- 1 lval staff 9 Jan  1  1970 writable.txt
-$ touch -a writable.txt
-$ myscript writable.txt
-ERROR: <input file>: File not modified since last read: 'writable.txt'
-Usage: myscript [OPTION]... <input file>
-$ touch -m writable.txt
-$ myscript writable.txt
-```
-
-</details>
-
-<!--@evalonly touch -d '1 January 1970' $SIMPLEARGS_DOC_RESOURCES/file-tests/* -->
-
-<!-- Not sure if @@filetype should be part of the library.
-     It is possibly cumbersome to use.
-     It adds a dependency to 'file' command.
-     It might not be used very often.
-
-#### @@filetype
-**Description**  
-Checks the type of file using `file` command.
-One can use `@@grep` and `@@glob` to validate that an input file is of correct type.
-However, relying on the filename i.e. checking that it ends with `.jpg` is inherently error-prone.
-Not all JPEG files have `.jpg` suffix (some might have `.JPG` or `.jpeg`).
-`@@filetype` uses `file` command to extract and utilize the actual type of file.
-
-* Checking that an input file is a JPEG file: `@@filetype "JPEG image data"`.
-* Checking that an input file is one of the image types: `@@filetype "(JPEG|PNG|GIF) image data"`
-  Note that using this directive comes with certain pitfalls. // TODO: fix indentation
-  For example, checking for text files is not as simple as one would first think.
-* `@@filetype "ASCII text"` would miss other character encodings (most notably UTF-8).
-* `@@filetype "text"` would cover other text files as well but miss empty files.
-  Depending on the scenario a script might need to accept an empty file as a `text file`.
-* `@@filetype "text|empty"` would probably work in most scenarios.
-
-**Arguments**  
-1. Bash extended regular expression
-   (see [Bash Pattern Matching](https://tiswww.case.edu/php/chet/bash/bashref.html#Pattern-Matching))
-   to be matched against output of `file` command.
-
-**Notes**  
-Executes `[[ "$(file --brief --dereference "${value}" 2>/dev/null)" =~ ${extended_regex} ]]`
-
-<details>
-  <summary>Example</summary>
-
-<!--@eval filter-simpleargs-script --example $SIMPLEARGS_DOC_SCRIPTS/validation/directives/filetype/scriptedit -->
-```
-sa_parse "$0" "<shell script>" @@filetype "ASCII text executable|empty"
-```
-<!--@eval shell-session-simulator --exec-dir $SIMPLEARGS_DOC_RESOURCES/filetype --path $SIMPLEARGS_DOC_SCRIPTS/validation/directives/filetype -c "file *" -c 'scriptedit text.txt' -c 'scriptedit data.xml' -c 'scriptedit conv.sh' -c 'scriptedit empty-file' -->
-```
-$ file *
-conv.sh:    Bourne-Again shell script text executable, ASCII text
-data.xml:   XML 1.0 document text, ASCII text
-empty-file: empty
-text.txt:   ASCII text
-$ scriptedit text.txt
-ERROR: <shell script>: 'text.txt' is not of type 'ASCII text executable|empty' (
-but 'ASCII text')
-Usage: scriptedit [OPTION]... <shell script>
-$ scriptedit data.xml
-ERROR: <shell script>: 'data.xml' is not of type 'ASCII text executable|empty' (
-but 'XML 1.0 document text, ASCII text')
-Usage: scriptedit [OPTION]... <shell script>
-$ scriptedit conv.sh
-ERROR: <shell script>: 'conv.sh' is not of type 'ASCII text executable|empty' (b
-ut 'Bourne-Again shell script text executable, ASCII text')
-Usage: scriptedit [OPTION]... <shell script>
-$ scriptedit empty-file
-```
-
-</details>
-
--->
-
-#### @@int
+### @@int
 **Description**  
 Checks that a value is a valid integer and optionally that the integer is in the given range.
 Bash integer equality test (`[ "${value}" -eq "${value}" ]`) is used to check the validity of the value.
@@ -740,7 +643,7 @@ Range with a negative minimum value cannot be specified as `--int arg @@int -12.
 since it is misinterpreted as a flag definition (starts with a dash).
 Solution: use quotes to create a single word: `--int arg "@@int -12.."`
 
-#### @@float
+### @@float
 **Description**  
 Checks that a value is a valid floating point number and optionally that the value is in the given range.
 An extended (grep) regular expression `^[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?$` is used to verify a valid floating point number.

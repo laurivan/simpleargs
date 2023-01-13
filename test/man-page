@@ -55,8 +55,6 @@ test_create_man_page() {
     cat > ${sa_test_dir}/expected-man-page.txt - <<'EOF'
 MAN-PAGE(1)                      User Scripts                      MAN-PAGE(1)
 
-
-
 NAME
        man-page - short description of this test script
 
@@ -72,24 +70,19 @@ OPTIONS
        -h, --help
               Print usage instructions and exit.
 
-
        -g     Group of the user
-
 
        -u ARG, --user ARG
               User to use for the execution
 
               Second doc paragraph
 
-
        --secondary-user ARG
               Secondary user. Default: ${USER}.
-
 
        -k
 
        --dogs ARG1:ARG2:...
-
 
        -p ARG, --pattern ARG
               Patterns  can  be added using this option (use multiple times to
@@ -99,25 +92,19 @@ OPTIONS
 
               There might even be a third paragraph. It could contain more and
               more  information  about  the  option. Note that if there are no
-              valid values defined this placeholder --><-- is simply  removed.
-
+              valid values defined this placeholder --><-- is simply removed.
 
        --level ARG
-              Level  to  be used. Possible values: 'low', 'medium', and 'high'
+              Level to be used. Possible values: 'low', 'medium',  and  'high'
               (default: high).
 
-
        --color ARG
-              Color to use. Options: 'red', 'yellow',  and  'green'  (default:
+              Color  to  use.  Options: 'red', 'yellow', and 'green' (default:
               red).
-
 
        --animal ARG
               Your  favorite  animal.  Options:  'dog',  'cat',  'horse',  and
               'sheep' (default: cat).
-
-
-
 
 man-page 2.1                                                       MAN-PAGE(1)
 EOF
