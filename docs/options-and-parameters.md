@@ -192,8 +192,8 @@ There is no way to distinguish between scenarios 1 and 2 since in both cases
 the argument that the script sees is `-i`. An empty string is assigned to the option variable.
 
 However, in scenario 3 the option variable is not set to an empty string — it is left unset.
-One can detect [the difference between an unset variable and a variable with an empty value](https://stackoverflow.com/a/5406887).
-However, the problem is more easily tackled by defining _a default value_ for the option using [@default](#default) directive.
+One can [distinguish between an unset variable and a variable with an empty value](https://stackoverflow.com/a/5406887).
+However, the problem is more easily tackled by defining _a default value_ for the option using [@default](directives.md#default) directive.
 
 ### Defining script parameters
 In addition to options many scripts accept parameters.
@@ -315,7 +315,7 @@ The syntax aims to be self-describing:
 a normal parameter definition `"<input files>"` is suffixed with three dots indicating
 that there can be *one or more* output files.
 That's right, with simpleargs a varargs parameter takes at least one value.
-Providing no values is an error (see [the next section](#the next section) `zero or more values options`).
+Providing no values is an error (see [the next section](#optional-varargs-parameters) for "parameters with zero or more values").
 
 The values (input files) are now accessed through an array (`${input_files[0]`, `${input_files[1]`, ...).
 <!--@eval shell-session-simulator --exec-dir $SIMPLEARGS_DOC_RESOURCES/foo2bar --path $SIMPLEARGS_DOC_SCRIPTS/varargs-parameters/simpleargs-script -c "cat input.txt" -c 'cat input-two.txt' -c 'foo2bar out.txt' -c 'foo2bar out.txt input.txt input-two.txt' -c 'cat out.txt' -->
@@ -376,5 +376,3 @@ $ echo "This foo is about to change." | foo2bar filtered.txt
 $ cat filtered.txt
 This bar is about to change.
 ```
-
-// Link to a cheat sheet
