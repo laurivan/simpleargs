@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+
+sa_script_version=0.1
+sa_short_description="display help information about using simpleargs"
+sa_long_description=(
+"This is the first paragraph of the documentation (can be seen in help output)."
+"This is the second paragraph (can be seen on man page)."
+)
+sa_default_tokens=( @expand=help @expand=version )
+
+join_with_comma() {
+    local IFS=,
+    echo "$*"
+}
+
+declare -A _topics=(
+  [@default]=""
+  [@optionalvalue]="foo"
+  [@varname]="foo"
+  [@onvalue]="foo"
+  [@offvalue]="foo"
+  [@allowrepeat]="foo"
+  [@doc]="foo"
+  [@allowempty]="foo"
+  [@multivalue]="foo"
+  [@validvalues]="foo"
+  [@validvaluesfile]="foo"
+  [@validvaluescommand]="foo"
+  [@afterprocessing]="foo"
+  [@required]="foo"
+  [@expand]="foo"
+  [@@grep]="foo"
+  [@@egrep]="foo"
+  [@@glob]="foo"
+  [@@exists]="foo"
+  [@@file]="foo"
+  [@@dir]="foo"
+  [@@notempty]="foo"
+  [@@readable]="foo"
+  [@@writable]="foo"
+  [@@executable]="foo"
+  [@@int]="foo"
+  [@@float]="foo"
+)
+
+# -------------------------------- simpleargs --------------------------------
+__sa_version=v0.2.0; __sa_bundle=~/.simpleargs.d/simpleargs-${__sa_version}; __sa_url=https://github.com/laurivan/simpleargs
+{ [ -s "${__sa_bundle}" ] || curl --create-dirs -fSLso "${__sa_bundle}" ${__sa_url}/releases/download/${__sa_version}/simpleargs-${__sa_version}; } &&
+    . "${__sa_bundle}" && [ -n "${sa_version}" ] || { echo "Error loading simpleargs" >&2; exit 1; }
+unset __sa_version __sa_bundle __sa_url
+
+sa_parse "$0" \
+         "[<topic>]" @varname=topics @validvalues="$(join_with_comma "${!_topics[@]}")" @doc="Allowed: @{v}"
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------
+
+log_level=INFO
+
+for topic in "${topics[@]}"
+do
+    echo "${topic}: ${_topics[${topic}]}"
+done

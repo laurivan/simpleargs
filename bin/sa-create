@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+
+sa_script_long_name="ABC Inc. sa-create"
+sa_script_version=1.0
+sa_script_build="build 1"
+sa_short_description="create simpleargs based scripts"
+sa_long_description=(
+"sa-create-script is used to create templates for shell scripts based on simpleargs library."
+)
+sa_default_tokens=( @expand=help @expand=version )
+
+# -------------------------------- simpleargs --------------------------------
+__sa_version=v0.2.0; __sa_bundle=~/.simpleargs.d/simpleargs-${__sa_version}; __sa_url=https://github.com/laurivan/simpleargs
+{ [ -s "${__sa_bundle}" ] || curl --create-dirs -fSLso "${__sa_bundle}" ${__sa_url}/releases/download/${__sa_version}/simpleargs-${__sa_version}; } &&
+    . "${__sa_bundle}" && [ -n "${sa_version}" ] || { echo "Error loading simpleargs" >&2; exit 1; }
+unset __sa_version __sa_bundle __sa_url
+
+sa_parse "$0" \
+         -v @varname=verbosity @allowrepeat @doc="Controls the verbosity of the created template. The flag can be repeated for a more verbose template." \
+         @doc="Omitting the flag will create a minimal template, -v will include placeholders for script's documentation, -vv also some example code to get one started." \
+         --shebang arg @default="#!/usr/bin/env bash" @doc="Shebang line to use for the script. Defaults to '@{d}'." \
+         -f/--force @doc="Overwrite existing target file." \
+         --bootstrap-style arg @default="download" @validvalues="download,env" @doc="Bootstrap style defines how the script obtains and sources simpleargs library. Options: 'download' (default) will download (requires curl) the library to ~/.simpleargs.d if not there already; 'env' will source the library from \${SIMPLEARGS} (where it has been preinstalled)" \
+         "[<output file>]" @doc="Target file to write the script template. Does not overwrite existing files unless -f/--force is used." @default=-
+sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"
+# ----------------------------------------------------------------------------
+
+if [ "${output_file}" != "-" ] && [ -e "${output_file}" ] && ! ${force}
+then
+    log ERROR "Output file already exists: '${output_file}' (use -f to overwrite)"
+    exit 1
+fi
+
+print_details() {
+    cat <<EOF
+sa_script_long_name="ABC Inc. ${script_name}"
+sa_script_version=0.1
+sa_script_build="build 1"
+EOF
+}
+print_descriptions() {
+    cat <<EOF
+sa_short_description="example simpleargs script"
+sa_long_description=(
+"This is the first paragraph of the documentation (can be seen in help output)."
+"This is the second paragraph (can be seen on man page)."
+)
+EOF
+}
+print_default_tokens() {
+    cat <<EOF
+sa_default_tokens=( @expand=help @expand=version )
+EOF
+}
+print_bootstrap_download() {
+    printf "__sa_version=%s; " "v0.2.0"
+    cat <<'EOF'
+__sa_bundle=~/.simpleargs.d/simpleargs-${__sa_version}; __sa_url=https://github.com/laurivan/simpleargs
+{ [ -s "${__sa_bundle}" ] || curl --create-dirs -fSLso "${__sa_bundle}" ${__sa_url}/releases/download/${__sa_version}/simpleargs-${__sa_version}; } &&
+    . "${__sa_bundle}" && [ -n "${sa_version}" ] || { echo "Error loading simpleargs" >&2; exit 1; }
+unset __sa_version __sa_bundle __sa_url
+EOF
+}
+print_bootstrap_env() {
+    cat <<'EOF'
+. "${SIMPLEARGS}" || { echo "Error loading '${SIMPLEARGS}'" >&2; exit 1; }
+EOF
+}
+
+print_script() {
+    printf "%s\n\n" "${shebang}"
+    [ "${verbosity_count}" -ge 2 ] && print_details
+    [ "${verbosity_count}" -ge 1 ] && print_descriptions
+    [ "${verbosity_count}" -ge 2 ] && print_default_tokens
+    [ "${verbosity_count}" -gt 0 ] && printf "\n"
+    printf "# -------------------------------- simpleargs --------------------------------\n"
+    case "${bootstrap_style}" in
+        download)
+            print_bootstrap_download
+            ;;
+        env)
+            print_bootstrap_env
+            ;;
+    esac
+    printf "\n"
+    printf 'sa_parse "$0"'
+    [ "${verbosity_count}" -ge 1 ] && printf ' -u/--user arg -p/--port arg "<input file>"'
+    printf "\n"
+    printf 'sa_end_parse $?; sa_process "$@"; sa_end_process $?; eval "set -- ${sa_args}"\n'
+    printf '# ----------------------------------------------------------------------------\n'
+
+    [ "${verbosity_count}" -ge 1 ] && cat <<'EOF'
+
+log_level=INFO
+log_vars INFO user port input_file
+EOF
+}
+
+if [ "${output_file}" = "-" ]
+then
+    script_name="<script name>"
+    print_script
+else
+    script_name=$(basename "${output_file}")
+    print_script > "${output_file}"
+    chmod u+x "${output_file}"
+fi
