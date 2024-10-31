@@ -165,11 +165,11 @@ $ myscript --level medium
 ```
 
 To specify a couple of autocompleted values but otherwise keep the values unrestricted one can use
-a dummy validation like `@glob "*"` which allows any value.
+a dummy validation like `@@glob "*"` which allows any value.
 ```sh
 # Allows any password to be used but also provides autocompletion for clever
 # chaps that don't bother wasting time on inventing strong passwords.
---password arg @validvalues=secret,passw0rd,qwerty @glob "*"
+--password arg @validvalues=secret,passw0rd,qwerty @@glob "*"
 ```
 
 <details>
